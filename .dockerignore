@@ -1,0 +1,14 @@
+# Keep the build context small and free of secrets.
+**/node_modules
+dist
+data
+harness
+docs
+.git
+.agents
+**/.env
+**/.env.*
+!.env.example
+**/__tests__
+*.log
+.DS_Store

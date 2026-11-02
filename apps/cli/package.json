@@ -1,0 +1,15 @@
+{
+  "name": "@exa/app-cli",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "type": "module",
+  "bin": { "exa": "./src/main.ts" },
+  "dependencies": {
+    "@exa/protocol": "workspace:*",
+    "@exa/core": "workspace:*",
+    "@exa/router": "workspace:*",
+    "@exa/tools": "workspace:*",
+    "@exa/store": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

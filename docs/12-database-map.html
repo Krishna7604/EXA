@@ -1,0 +1,560 @@
+<!doctype html>
+<!-- exa database map. Open this file in a browser. Diagrams render with Mermaid from a CDN.
+     Source of truth for the schema: packages/store/src/migrations/schema.migrations.ts -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>exa Database Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: a single reading column with full-width diagram panels; tables grouped like the schema itself. */
+  :root {
+    --bg: #f6f8f9;
+    --surface: #ffffff;
+    --fg: #17212a;
+    --muted: #55636f;
+    --line: #d9e1e6;
+    --accent: #0f6e86;
+    --accent-soft: #e2f1f5;
+    --global: #6a4fb3;
+    --global-soft: #efeafa;
+    --warn: #9a5b00;
+    --warn-soft: #fbf0dc;
+    --code-bg: #eef2f4;
+    --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1519; --surface: #151d22; --fg: #e3eaee; --muted: #9aa9b3; --line: #26333b;
+      --accent: #5cc1db; --accent-soft: #123039; --global: #b49cf0; --global-soft: #2a2440;
+      --warn: #f0b45a; --warn-soft: #3a2b12; --code-bg: #1b252b; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1519; --surface: #151d22; --fg: #e3eaee; --muted: #9aa9b3; --line: #26333b;
+    --accent: #5cc1db; --accent-soft: #123039; --global: #b49cf0; --global-soft: #2a2440;
+    --warn: #f0b45a; --warn-soft: #3a2b12; --code-bg: #1b252b; color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.6 var(--font-body);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 40px 72px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 56px; }
+  .prose { max-width: 68ch; }
+  h1, h2, h3 { font-family: var(--font-display); line-height: 1.15; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.01em; }
+  h2 { font-size: 26px; }
+  h3 { font-size: 18px; }
+  p { margin: 0; }
+  a { color: var(--accent); }
+  section { display: grid; gap: 18px; }
+  .eyebrow { font: 500 12px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+  .lede { font-size: 17px; color: var(--muted); max-width: 64ch; }
+  header { display: grid; gap: 14px; }
+
+  code, pre { font-family: var(--font-mono); font-size: 13px; }
+  :not(pre) > code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; }
+  pre.cmd {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; margin: 0; overflow-x: auto; line-height: 1.55;
+  }
+  pre.cmd .c { color: var(--muted); }
+
+  .ways { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
+  .way {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px; display: grid; gap: 12px; align-content: start; min-width: 0;
+  }
+  .way .when { font-size: 13px; color: var(--muted); }
+  dl.conn { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 13px; }
+  dl.conn dt { color: var(--muted); }
+  dl.conn dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+
+  .diagram {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; overflow-x: auto;
+  }
+  .diagram pre.mermaid { margin: 0; background: transparent; display: flex; justify-content: center; min-width: 560px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); align-items: center; }
+  .chip { font: 500 11px/1 var(--font-mono); letter-spacing: 0.04em; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+  .chip.global { background: var(--global-soft); color: var(--global); }
+  .chip.tenant { background: var(--accent-soft); color: var(--accent); }
+  .chip.unused { background: var(--warn-soft); color: var(--warn); }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { font: 500 12px/1.2 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  td:first-child { font-family: var(--font-mono); font-size: 13px; white-space: nowrap; }
+  td .chip { margin-left: 6px; }
+
+  .group-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; }
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .rule { border-top: 2px solid var(--accent); padding-top: 12px; display: grid; gap: 6px; min-width: 0; }
+  .rule p { color: var(--muted); font-size: 14px; }
+
+  .life { display: grid; gap: 0; }
+  .life div { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .life div:last-child { border-bottom: 0; }
+  .life b { font-weight: 600; }
+  .life span { color: var(--muted); }
+  @media (max-width: 560px) { .life div { grid-template-columns: 1fr; gap: 2px; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">exa · Postgres schema · 27 tables · 2 migrations</div>
+    <h1>exa Database Map</h1>
+    <p class="lede">Every table the exa server keeps, how they connect, and how to open the data yourself. The CLI's local chats and files live outside the database; they're listed at the end.</p>
+  </header>
+
+  <section>
+    <h2>Open the data</h2>
+    <div class="ways">
+      <div class="way">
+        <h3>Docker Postgres</h3>
+        <p class="when">When you run <code>bun run db:up</code> + <code>bun run dev:pg</code></p>
+        <pre class="cmd"><span class="c"># terminal</span>
+bun run db:psql
+<span class="c"># summary of every table</span>
+DATABASE_URL=postgres://exa:exa@127.0.0.1:54320/exa \
+  bun run db:q</pre>
+        <dl class="conn">
+          <dt>Host</dt><dd>127.0.0.1</dd>
+          <dt>Port</dt><dd>54320</dd>
+          <dt>User / pass</dt><dd>exa / exa</dd>
+          <dt>Database</dt><dd>exa</dd>
+        </dl>
+        <p class="when">Paste these into TablePlus, DBeaver, pgAdmin or DataGrip.</p>
+      </div>
+      <div class="way">
+        <h3>Embedded database</h3>
+        <p class="when">When you run plain <code>bun run dev</code> (data in <code>~/.exa/server/pg</code>)</p>
+        <pre class="cmd"><span class="c"># works while the server runs (reads a copy)</span>
+bun run db:q
+<span class="c"># GUI access: stop the server first</span>
+bun run db</pre>
+        <dl class="conn">
+          <dt>Host</dt><dd>127.0.0.1</dd>
+          <dt>Port</dt><dd>5433</dd>
+          <dt>User / pass</dt><dd>postgres / (none)</dd>
+          <dt>Database</dt><dd>postgres</dd>
+        </dl>
+        <p class="when">Only one process can open it, hence stopping the server.</p>
+      </div>
+      <div class="way">
+        <h3>Production (docker compose)</h3>
+        <p class="when">The <code>postgres</code> service inside <code>docker-compose.yml</code></p>
+        <pre class="cmd">docker compose exec postgres \
+  psql -U exa -d exa</pre>
+        <p class="when">Not published to a host port on purpose. For a GUI, use an SSH tunnel to the host, or add a <code>127.0.0.1</code>-only port mapping.</p>
+      </div>
+    </div>
+    <pre class="cmd"><span class="c">-- a few useful queries</span>
+select slug, plan, status from tenants;
+select t.slug, u.email, m.role from memberships m join tenants t on t.id = m.tenant_id join users u on u.id = m.user_id;
+select title, model, loop_host, storage_mode, cost_usd, updated_at from sessions order by updated_at desc limit 20;
+select m.role, p.type, p.data->>'text' as text from parts p join messages m on m.id = p.message_id where p.session_id = '&lt;id&gt;';
+select ts, action, target, decision from audit_log order by ts desc limit 50;
+select model_used, sum(input_tokens + output_tokens) as tokens, sum(cost_usd) as cost from usage_events group by 1;</pre>
+    <p class="prose">You connect as the database owner, so you see <b>every</b> organization's rows. The app itself never does: each request switches to the restricted <code>exa_app</code> role, and row-level security shows it only the current organization's rows.</p>
+  </section>
+
+  <section>
+    <div class="eyebrow">The big picture</div>
+    <h2>Four groups of tables</h2>
+    <p class="prose">Everything hangs off <code>tenants</code> (an organization). Global tables are shared by the sign-in layer; every other table carries a <code>tenant_id</code> and is locked to one organization.</p>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph G["Identity & access · global, no RLS"]
+    T[tenants] --- M[memberships] --- U[users]
+    A[api_tokens]
+    D[device_codes]
+    B[model_backends]
+  end
+  subgraph C["Org configuration · per tenant"]
+    S[settings]
+    R[permission_rules]
+    K[provider_keys · secrets]
+    Q[quotas]
+    X[skills · agent_definitions · commands · mcp_servers]
+    P[projects]
+  end
+  subgraph W["Sessions & conversation · per tenant"]
+    SE[sessions] --> L[session_leases]
+    SE --> AP[approvals]
+    SE --> MS[messages] --> PT[parts]
+    SE --> TD[todos]
+    SE -.-> EV[session_events]
+  end
+  subgraph Y["Usage & audit · per tenant, monthly partitions"]
+    UE[usage_events] --> UR[usage_rollups]
+    AU[audit_log]
+  end
+  T --> C
+  T --> W
+  T -.-> Y
+  U -.-> SE
+</pre>
+    </div>
+    <div class="legend">
+      <span>Solid line = foreign key</span>
+      <span>Dashed line = linked by id, no foreign key</span>
+      <span class="chip global">GLOBAL</span><span>shared, no row-level security</span>
+      <span class="chip tenant">TENANT</span><span>row-level security on tenant_id</span>
+      <span class="chip unused">RESERVED</span><span>table exists, code doesn't write it yet</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="group-head"><div class="eyebrow">Group 1</div><span class="chip global">GLOBAL</span></div>
+    <h2>Identity &amp; access</h2>
+    <p class="prose">Who can sign in, and to which organization. These tables are read before the organization is known, so they sit outside row-level security. The app role can only read them.</p>
+    <div class="diagram">
+<pre class="mermaid">
+erDiagram
+  tenants ||--o{ memberships : "has members"
+  users ||--o{ memberships : "belongs to"
+  tenants ||--o{ api_tokens : "scopes"
+  users ||--o{ api_tokens : "owns"
+  users |o..o{ device_codes : "approves"
+  tenants {
+    uuid id PK
+    text slug UK "org handle, e.g. acme"
+    text plan
+    text status "active | suspended"
+    bigint policy_version
+  }
+  users {
+    uuid id PK
+    text email UK
+    text display_name
+    text auth_subject UK "OIDC subject"
+  }
+  memberships {
+    uuid tenant_id PK,FK
+    uuid user_id PK,FK
+    text role "owner | admin | member | viewer"
+    text status
+  }
+  api_tokens {
+    uuid id PK
+    uuid tenant_id FK
+    uuid user_id FK
+    bytea token_hash UK "SHA-256, never the token"
+    text device_name
+    timestamptz expires_at
+    timestamptz revoked_at
+  }
+  device_codes {
+    bytea device_code_hash PK
+    text user_code UK "shown in the CLI"
+    text status "pending | approved | denied | consumed"
+    timestamptz expires_at
+  }
+  model_backends {
+    text id PK
+    text provider
+    text model
+    text tier "fast | balanced | strong"
+    int priority
+  }
+</pre>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>Table</th><th>Holds</th></tr>
+      <tr><td>tenants</td><td>One row per organization. Everything else points here and is deleted with it (<code>on delete cascade</code>).</td></tr>
+      <tr><td>users</td><td>One row per person, unique by email. A user can belong to several organizations.</td></tr>
+      <tr><td>memberships</td><td>User ↔ organization with a role: owner, admin, member or viewer.</td></tr>
+      <tr><td>api_tokens</td><td>Long-lived CLI tokens from <code>exa login</code>. Only a SHA-256 hash is stored, so a database leak doesn't leak tokens.</td></tr>
+      <tr><td>device_codes</td><td>Short-lived codes for the CLI's "approve this device in your browser" login.</td></tr>
+      <tr><td>model_backends<span class="chip unused">RESERVED</span></td><td>Meant for the <code>exa</code> router's model pool. Today the pool comes from <code>EXA_BACKENDS</code> / defaults in code instead.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="group-head"><div class="eyebrow">Group 2</div><span class="chip tenant">TENANT</span></div>
+    <h2>Org configuration</h2>
+    <p class="prose">What admins configure. Settings and rules are layered by scope: <code>tenant</code> → <code>project</code> → <code>user</code>, later scopes win unless a row is <code>locked</code>. <code>scope_id</code> is the id of that tenant, project or user.</p>
+    <div class="diagram">
+<pre class="mermaid">
+erDiagram
+  tenants ||--o{ settings : ""
+  tenants ||--o{ permission_rules : ""
+  tenants ||--o{ provider_keys : ""
+  tenants ||--o{ quotas : ""
+  tenants ||--o{ skills : ""
+  tenants ||--o{ agent_definitions : ""
+  tenants ||--o{ secrets : ""
+  tenants ||--o{ mcp_servers : ""
+  mcp_servers }o..o| secrets : "secret_id"
+  settings {
+    uuid tenant_id PK,FK
+    text scope PK "tenant | project | user"
+    uuid scope_id PK
+    text key PK "e.g. storage.mode"
+    jsonb value
+    boolean locked
+  }
+  permission_rules {
+    uuid id PK
+    text scope
+    uuid scope_id
+    text permission "bash, edit, read, mcp..."
+    text pattern "e.g. git push *"
+    text action "allow | ask | deny"
+    boolean locked
+  }
+  provider_keys {
+    uuid id PK
+    text owner_scope "tenant | user"
+    uuid owner_id
+    text provider "openai, anthropic..."
+    bytea ciphertext "AES-256-GCM"
+    bytea wrapped_dek
+    int key_version
+    text last4
+  }
+  quotas {
+    text subject_scope PK "tenant | user"
+    uuid subject_id PK
+    text period PK "day | month"
+    bigint max_tokens
+    numeric max_cost_usd
+    int max_requests
+  }
+  skills {
+    uuid id PK
+    text scope
+    text name
+    text body "SKILL.md content"
+  }
+  agent_definitions {
+    uuid id PK
+    text name
+    text mode "primary | subagent | all"
+    text prompt
+    jsonb permission
+  }
+  secrets {
+    uuid id PK
+    text name
+    bytea ciphertext
+  }
+  mcp_servers {
+    uuid id PK
+    text name
+    text transport "stdio | http"
+    jsonb config
+  }
+</pre>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>Table</th><th>Holds</th></tr>
+      <tr><td>settings</td><td>Key/value org settings (<code>storage.mode</code>, <code>models.allowed</code>, <code>retention.contentDays</code>, <code>web.tools</code>…). Defaults live in code; only overrides are stored.</td></tr>
+      <tr><td>permission_rules</td><td>Rules like <code>bash · git push * → ask</code>. Locked tenant rules beat everything else.</td></tr>
+      <tr><td>provider_keys</td><td>Bring-your-own API keys, envelope-encrypted. Only the last 4 characters are readable; the server decrypts at call time with <code>EXA_MASTER_KEY</code>.</td></tr>
+      <tr><td>quotas</td><td>Token, cost and request limits per day or month, for the org or one user.</td></tr>
+      <tr><td>skills, agent_definitions</td><td>Skills and agents published to the whole org; the CLI and web chats both load them.</td></tr>
+      <tr><td>projects<span class="chip unused">RESERVED</span></td><td>For project-scoped settings and sessions. Columns point at it, but nothing creates projects yet.</td></tr>
+      <tr><td>commands, mcp_servers, secrets<span class="chip unused">RESERVED</span></td><td>Org-shared slash commands and server-side MCP servers. Planned; MCP still comes from local config files.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="group-head"><div class="eyebrow">Group 3</div><span class="chip tenant">TENANT</span></div>
+    <h2>Sessions &amp; conversation</h2>
+    <p class="prose">One row in <code>sessions</code> per chat, always. The conversation text (<code>messages</code> and <code>parts</code>) is only written when the session's <code>storage_mode</code> is <code>server</code>.</p>
+    <div class="diagram">
+<pre class="mermaid">
+erDiagram
+  tenants ||--o{ sessions : ""
+  users ||..o{ sessions : "user_id"
+  sessions |o..o{ sessions : "parent_id (subagent)"
+  sessions ||--o| session_leases : "who runs it"
+  sessions ||--o{ approvals : ""
+  sessions ||--o{ messages : "server mode only"
+  messages ||--o{ parts : ""
+  sessions ||--o{ todos : ""
+  sessions ||..o{ session_events : "seq"
+  sessions {
+    uuid id PK "UUIDv7, time-ordered"
+    uuid tenant_id FK
+    uuid user_id
+    uuid parent_id
+    text title
+    text model
+    text loop_host "client | server"
+    text storage_mode "none | local | server"
+    text permission_mode
+    jsonb revert "pending undo point"
+    bigint tokens_input
+    bigint tokens_output
+    numeric cost_usd
+  }
+  session_leases {
+    uuid session_id PK,FK
+    text holder_type "device | server"
+    text holder_id
+    bigint fencing
+    timestamptz expires_at
+  }
+  approvals {
+    uuid id PK
+    uuid session_id FK
+    text permission
+    text_array patterns
+    text state "pending | once | always | reject | expired"
+    uuid decided_by
+  }
+  messages {
+    uuid id PK
+    uuid session_id FK
+    uuid parent_id
+    text role "user | assistant"
+    jsonb data
+  }
+  parts {
+    uuid id PK
+    uuid message_id FK
+    text type "text | tool | reasoning | file..."
+    jsonb data "final state only"
+  }
+  todos {
+    uuid session_id PK,FK
+    int position PK
+    text content
+    text status
+  }
+  session_events {
+    uuid session_id PK
+    bigint seq PK
+    text type
+    jsonb data
+  }
+</pre>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>Table</th><th>Holds</th></tr>
+      <tr><td>sessions</td><td>Title, model, agent, where the loop runs (<code>client</code> = CLI, <code>server</code> = web), storage mode, running token and cost totals. Subagent chats point at their parent.</td></tr>
+      <tr><td>session_leases</td><td>Which device or server currently drives a CLI session, so two machines can't run the same chat at once.</td></tr>
+      <tr><td>approvals</td><td>"Allow this command?" requests. Any attached client can answer; the first answer wins. They expire.</td></tr>
+      <tr><td>messages, parts</td><td>The conversation itself. A message is one turn; parts are its pieces (text, tool calls with output, reasoning, files). Parts are saved once per step in their final form.</td></tr>
+      <tr><td>todos</td><td>The agent's todo list, synced from CLI sessions. Web chats keep their todo list in server memory only.</td></tr>
+      <tr><td>session_events<span class="chip unused">RESERVED</span></td><td>Planned outbox so viewers on another server node can catch up. Nothing writes it yet: live events are kept in the server's memory (a short replay buffer per session). Cleanup already exists in the maintenance job.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="group-head"><div class="eyebrow">Group 4</div><span class="chip tenant">TENANT</span></div>
+    <h2>Usage &amp; audit</h2>
+    <p class="prose">Append-only history, always kept regardless of storage mode. The two big tables are split into one partition per month, so old months are dropped whole instead of deleted row by row.</p>
+    <div class="diagram">
+<pre class="mermaid">
+erDiagram
+  tenants ||..o{ usage_events : ""
+  tenants ||..o{ usage_rollups : ""
+  tenants ||..o{ audit_log : ""
+  sessions |o..o{ usage_events : "session_id"
+  usage_events }o..|| usage_rollups : "summed into"
+  usage_events {
+    uuid id PK
+    timestamptz ts PK "partition key"
+    uuid user_id
+    uuid session_id
+    text model_requested "e.g. exa"
+    text model_used "the real model"
+    text key_source "user | tenant | pool"
+    int input_tokens
+    int output_tokens
+    numeric cost_usd
+    int latency_ms
+    text status
+  }
+  usage_rollups {
+    text subject_scope PK
+    uuid subject_id PK
+    text period PK "day | month"
+    date period_start PK
+    bigint tokens
+    numeric cost_usd
+    int requests
+  }
+  audit_log {
+    uuid id PK
+    timestamptz ts PK "partition key"
+    uuid actor_user_id
+    text device
+    uuid session_id
+    text action "login, session.created, tool..."
+    text target
+    text decision
+    jsonb meta
+  }
+</pre>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>Table</th><th>Holds</th></tr>
+      <tr><td>usage_events</td><td>One row per model call: which model was asked for vs. used, whose key paid, tokens, cost, latency. Physical tables: <code>usage_events_202610</code>, <code>_202611</code>… plus <code>_default</code>.</td></tr>
+      <tr><td>usage_rollups</td><td>Running daily and monthly totals per org and per user. Quota checks read these instead of summing raw events.</td></tr>
+      <tr><td>audit_log</td><td>Who did what: sign-ins, tokens, settings and key changes, sessions, tool runs and permission decisions. Same monthly partitions.</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Rules the schema follows</h2>
+    <div class="rules">
+      <div class="rule"><h3>One organization per query</h3><p>Every tenant table has a row-level security policy on <code>tenant_id</code>. The app sets <code>exa.tenant_id</code> and switches to <code>exa_app</code> inside each transaction, so even a buggy query can't see another org.</p></div>
+      <div class="rule"><h3>Chat text is optional</h3><p><code>none</code>: kept in memory only. <code>local</code>: on the user's Mac. <code>server</code>: in <code>messages</code>/<code>parts</code>. Admins can lock the mode for the org.</p></div>
+      <div class="rule"><h3>Secrets are never readable</h3><p>API tokens are hashed. Provider keys and secrets are AES-256-GCM encrypted with a per-secret key, wrapped by a versioned master key that never touches the database.</p></div>
+      <div class="rule"><h3>Time-ordered ids</h3><p>Ids are UUIDv7, so they sort by creation time and keep indexes compact.</p></div>
+      <div class="rule"><h3>Some links are ids, not foreign keys</h3><p>High-volume and partitioned tables (usage, audit, events) skip foreign keys to keep inserts cheap and history intact after deletes.</p></div>
+      <div class="rule"><h3>Migrations run on startup</h3><p>Plain SQL in <code>packages/store/src/migrations/schema.migrations.ts</code>, recorded in <code>exa_migrations</code>. Two so far: <code>001_init</code> and <code>002_partition_fn</code>.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How long data stays</h2>
+    <div class="life">
+      <div><b>Chat content</b><span>30 days by default for <code>server</code> mode (org setting <code>retention.contentDays</code>), then deleted by the maintenance job.</span></div>
+      <div><b>Usage &amp; audit</b><span>13 months (<code>EXA_USAGE_RETENTION_MONTHS</code>). Older monthly partitions are dropped.</span></div>
+      <div><b>Live events</b><span>Server memory only, a short replay buffer per session for reconnecting viewers.</span></div>
+      <div><b>Approvals, device codes</b><span>Expire after their <code>expires_at</code>.</span></div>
+      <div><b>Session metadata</b><span>Kept until the user forgets the session or the org is deleted.</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Data that isn't in the database</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Where</th><th>What</th></tr>
+      <tr><td>~/.exa/sessions/*.jsonl</td><td>CLI chats in <code>local</code> mode (the CLI default). Append-only, readable only by you.</td></tr>
+      <tr><td>~/.exa/credentials.json</td><td>The CLI's login token and server address.</td></tr>
+      <tr><td>~/.exa/snapshots/</td><td>Shadow git repos behind <code>/undo</code>, separate from your project's <code>.git</code>.</td></tr>
+      <tr><td>~/.exa/tool-output/</td><td>Full output of long tool calls.</td></tr>
+      <tr><td>server data dir</td><td><code>~/.exa/server</code> in dev, <code>/data</code> in Docker: the policy signing key, web-chat sandboxes, their undo snapshots and tool output.</td></tr>
+    </table></div>
+  </section>
+</div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs";
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "default", securityLevel: "strict" });
+</script>
+</body>
+</html>

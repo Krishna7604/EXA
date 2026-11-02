@@ -1,0 +1,37 @@
+{
+  "name": "exa",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "bun test packages apps",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "bun run typecheck && bun run test",
+    "server": "bun --no-env-file run apps/server/src/main.ts",
+    "cli": "bun --no-env-file run apps/cli/src/main.ts",
+    "build:cli": "bun build apps/cli/src/main.ts --compile --minify --no-compile-autoload-dotenv --no-compile-autoload-bunfig --outfile dist/exa",
+    "test:pg": "EXA_TEST_DATABASE_URL=${EXA_TEST_DATABASE_URL:-postgres://exa:exatest@127.0.0.1:55432/exa} bun test packages/store apps/server",
+    "db:q": "bun --no-env-file run scripts/db-inspect.ts",
+    "dev": "bash scripts/dev-server.sh",
+    "db": "bun --no-env-file run scripts/db.ts",
+    "format": "biome check --write .",
+    "lint": "biome check .",
+    "dev:pg": "DATABASE_URL=${DATABASE_URL:-postgres://exa:exa@127.0.0.1:54320/exa} bash scripts/dev-server.sh",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d --wait",
+    "db:down": "docker compose -f docker-compose.dev.yml down",
+    "db:reset": "docker compose -f docker-compose.dev.yml down -v",
+    "db:logs": "docker compose -f docker-compose.dev.yml logs -f postgres",
+    "db:psql": "docker compose -f docker-compose.dev.yml exec postgres psql -U exa -d exa"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@electric-sql/pglite": "0.3.16",
+    "@electric-sql/pglite-socket": "0.0.22",
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}

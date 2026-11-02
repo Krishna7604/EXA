@@ -1,0 +1,14 @@
+{
+  "model": "bedrock/eu.amazon.nova-micro-v1:0",
+  "fallbacks": [{ "model": "openai/gpt-5-mini" }, { "model": "openai/gpt-5" }],
+  "maxTokens": 2048,
+  "routing": {
+    "strategy": "direct-if-key-else-openrouter"
+  },
+  "maxSteps": 50,
+  "maxCost": 1.0,
+  "compactionThreshold": 0.8,
+  "sessionFile": "./work/session.jsonl",
+  "workDir": "./work",
+  "systemPromptFile": "./CLAUDE.md"
+}

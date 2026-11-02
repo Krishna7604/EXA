@@ -1,0 +1,16 @@
+[project]
+name = "exa-python-workers"
+version = "0.1.0"
+description = "Python MCP workers for exa harness (RAG + evals)"
+requires-python = ">=3.11"
+dependencies = [
+  "fastmcp>=2.0.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,28 @@
+# Production-shaped local stack: exa server + Postgres 16.
+#   cp .env.example .env   # fill EXA_JWT_SECRET, EXA_MASTER_KEY, at least one pool key
+#   docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: exa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-exa}
+      POSTGRES_DB: exa
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exa"]
+      interval: 5s
+      retries: 20
+  server:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://exa:${POSTGRES_PASSWORD:-exa}@postgres:5432/exa
+      EXA_DATA_DIR: /data
+    ports: ["4317:4317"]
+    volumes: [exadata:/data]
+    depends_on:
+      postgres: { condition: service_healthy }
+volumes:
+  pgdata:
+  exadata:

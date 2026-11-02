@@ -1,0 +1,6 @@
+{
+  "servers": [
+    { "name": "rag-py", "cmd": "uv run python-workers/rag_server.py" },
+    { "name": "evals-py", "cmd": "uv run python-workers/eval_server.py" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@exa/app-web",
+  "version": "2.0.0-alpha.0",
+  "private": true,
+  "description": "Light client: static files served by apps/server (no build step)."
+}

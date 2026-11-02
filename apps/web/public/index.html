@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>exa</title>
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111827'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' font-weight='700' fill='%2322d3ee' text-anchor='middle'%3Eex%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app" class="app">
+      <aside id="sidebar" class="sidebar">
+        <div class="brand"><span class="logo">exa</span><span class="muted" id="tenant-label"></span></div>
+        <button id="new-chat" class="btn primary block">+ New chat</button>
+        <nav id="session-list" class="session-list" aria-label="Sessions"></nav>
+        <div class="sidebar-foot">
+          <button id="open-settings" class="btn ghost block">Settings</button>
+          <div class="muted small" id="user-label"></div>
+        </div>
+      </aside>
+
+      <main id="main" class="main">
+        <section id="view-login" class="view hidden">
+          <div class="card narrow">
+            <h1 class="logo big">exa</h1>
+            <p class="muted">Sign in to your organization.</p>
+            <form id="dev-login" class="stack hidden">
+              <label>Email <input name="email" type="email" required autocomplete="email" /></label>
+              <label>Organization <input name="tenant" required pattern="[a-z0-9-]+" placeholder="acme" /></label>
+              <button class="btn primary" type="submit">Sign in (dev)</button>
+            </form>
+            <form id="token-login" class="stack">
+              <label>API token <input name="token" type="password" placeholder="exa_…" autocomplete="off" /></label>
+              <button class="btn" type="submit">Use token</button>
+            </form>
+            <p class="muted small" id="login-error"></p>
+          </div>
+        </section>
+
+        <section id="view-device" class="view hidden">
+          <div class="card narrow">
+            <h2>Connect a device</h2>
+            <p class="muted">Confirm the code shown in your terminal to let <b>exa</b> CLI act as you.</p>
+            <form id="device-form" class="stack">
+              <label>Code <input name="code" required autocomplete="off" class="mono upper" placeholder="ABCD-EFGH" /></label>
+              <button class="btn primary" type="submit">Approve</button>
+            </form>
+            <p id="device-result"></p>
+          </div>
+        </section>
+
+        <section id="view-chat" class="view hidden">
+          <header class="chat-head">
+            <button id="toggle-sidebar" class="btn ghost icon" aria-label="Menu">☰</button>
+            <div class="title-wrap">
+              <div id="chat-title" class="chat-title">New chat</div>
+              <div class="badges" id="chat-badges"></div>
+            </div>
+            <div class="head-actions">
+              <select id="model-select" aria-label="Model"></select>
+              <select id="mode-select" aria-label="Permission mode">
+                <option value="default">default</option>
+                <option value="accept-edits">accept edits</option>
+                <option value="plan">plan (read-only)</option>
+                <option value="bypass">bypass</option>
+              </select>
+              <button id="abort-btn" class="btn danger hidden">Stop</button>
+              <button id="forget-btn" class="btn ghost" title="Delete this session everywhere">Forget</button>
+            </div>
+          </header>
+          <div id="messages" class="messages" aria-live="polite"></div>
+          <div id="approvals" class="approvals"></div>
+          <div id="todos" class="todos hidden"></div>
+          <form id="composer" class="composer">
+            <textarea id="prompt" rows="1" placeholder="Ask exa… (Enter to send, Shift+Enter for newline)"></textarea>
+            <button class="btn primary" type="submit" id="send-btn">Send</button>
+          </form>
+          <p id="readonly-note" class="muted small center hidden">This session runs on a client device. You can watch, approve and stop it here.</p>
+        </section>
+
+        <section id="view-settings" class="view hidden">
+          <div class="settings">
+            <header class="row between"><h2>Settings</h2><button id="close-settings" class="btn ghost">Close</button></header>
+            <div class="card">
+              <h3>Your provider keys <span class="muted small">(bring your own key)</span></h3>
+              <p class="muted small">Keys are encrypted on the server and only decrypted to call the provider. Pick a model like <code>openai/gpt-5</code> to use yours, or <code>exa</code> for the shared pool.</p>
+              <div id="keys-list" class="list"></div>
+              <form id="key-form" class="row wrap">
+                <select name="provider" required>
+                  <option value="anthropic">Anthropic</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option>
+                  <option value="google">Google Gemini</option><option value="groq">Groq</option><option value="deepseek">DeepSeek</option>
+                  <option value="xai">xAI</option><option value="mistral">Mistral</option><option value="together">Together</option>
+                  <option value="cerebras">Cerebras</option><option value="bedrock">Amazon Bedrock</option><option value="opencode">OpenCode Zen</option>
+                </select>
+                <input name="key" type="password" placeholder="API key" required autocomplete="off" />
+                <select name="scope"><option value="user">just me</option><option value="tenant">whole organization</option></select>
+                <button class="btn primary">Save key</button>
+              </form>
+              <p class="error" id="key-error"></p>
+            </div>
+            <div class="card">
+              <h3>Defaults</h3>
+              <div class="row wrap">
+                <label>Default model <input id="pref-model" placeholder="exa" /></label>
+                <label>Store chats
+                  <select id="pref-storage">
+                    <option value="">organization default</option>
+                    <option value="none">don't store (memory only)</option>
+                    <option value="local">on my device (CLI)</option>
+                    <option value="server">on the server</option>
+                  </select>
+                </label>
+                <button id="save-prefs" class="btn">Save</button>
+              </div>
+              <p class="muted small" id="prefs-note"></p>
+            </div>
+            <div class="card">
+              <h3>Usage <span class="muted small">(last 30 days)</span></h3>
+              <div id="usage" class="list"></div>
+            </div>
+            <div class="card admin-only hidden">
+              <h3>Organization policy</h3>
+              <div class="row wrap">
+                <label>Chat storage
+                  <select id="org-storage">
+                    <option value="">let users choose</option>
+                    <option value="none">never store</option>
+                    <option value="server">always store on server</option>
+                  </select>
+                </label>
+                <label class="row"><input type="checkbox" id="org-storage-lock" /> lock</label>
+                <label>Web chat tools
+                  <select id="org-webtools">
+                    <option value="chat">chat — web, todos, skills, subagents (no filesystem)</option>
+                    <option value="agent">agent — full tools in a sandbox workspace</option>
+                  </select>
+                </label>
+                <label>Allowed models <input id="org-models" placeholder="exa*, openai/*  (empty = all)" /></label>
+                <button id="save-org" class="btn">Save</button>
+              </div>
+              <h4>Permission rules</h4>
+              <div id="rules-list" class="list"></div>
+              <form id="rule-form" class="row wrap">
+                <input name="permission" placeholder="bash" required />
+                <input name="pattern" placeholder="git push *" required />
+                <select name="action"><option>deny</option><option>ask</option><option>allow</option></select>
+                <label class="row"><input type="checkbox" name="locked" checked /> locked</label>
+                <button class="btn">Add rule</button>
+              </form>
+            </div>
+            <div class="row"><button id="logout" class="btn ghost">Sign out</button></div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

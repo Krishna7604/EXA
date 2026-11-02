@@ -1,0 +1,39 @@
+# Local Postgres for development and tests. The exa server itself runs on your machine
+# (`bun run dev:pg`); only the databases run in Docker.
+#   bun run db:up      start both databases
+#   bun run db:down    stop them (data in the dev volume is kept)
+#   bun run db:reset   stop and DELETE the dev data
+#
+#   postgres       dev database   postgres://exa:exa@127.0.0.1:54320/exa   (data kept in a volume)
+#   postgres-test  test database  postgres://exa:exatest@127.0.0.1:55432/exa (in RAM, wiped on stop)
+name: exa-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: exa
+      POSTGRES_PASSWORD: exa
+      POSTGRES_DB: exa
+    ports: ["127.0.0.1:54320:5432"]
+    volumes: [exa-dev-pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exa -d exa"]
+      interval: 2s
+      retries: 30
+
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: exa
+      POSTGRES_PASSWORD: exatest
+      POSTGRES_DB: exa
+    ports: ["127.0.0.1:55432:5432"]
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U exa -d exa"]
+      interval: 2s
+      retries: 30
+
+volumes:
+  exa-dev-pgdata:

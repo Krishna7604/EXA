@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>exa — Data Layout &amp; Storage Map</title>
+<style>
+:root{
+  --bg:#0d1117; --bg2:#161b22; --bg3:#1c2128; --line:#30363d; --line2:#3d444d;
+  --fg:#e6edf3; --fg2:#9198a1; --fg3:#6e7681;
+  --blue:#58a6ff; --green:#3fb950; --amber:#d29922; --red:#f85149;
+  --purple:#bc8cff; --cyan:#39c5cf; --pink:#f778ba;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);
+  font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased;
+}
+code,pre,.mono{font-family:var(--mono)}
+
+/* ---------- layout ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+header.hero{padding:72px 0 48px;border-bottom:1px solid var(--line)}
+h1{font-size:40px;line-height:1.15;margin:0 0 12px;letter-spacing:-.02em}
+h1 span{color:var(--blue)}
+.sub{color:var(--fg2);font-size:17px;max-width:760px;margin:0}
+.badges{margin-top:22px;display:flex;gap:8px;flex-wrap:wrap}
+.badge{
+  background:var(--bg3);border:1px solid var(--line);border-radius:999px;
+  padding:4px 12px;font-size:12.5px;color:var(--fg2);font-family:var(--mono)
+}
+.badge b{color:var(--fg);font-weight:600}
+
+nav{
+  position:sticky;top:0;z-index:50;background:rgba(13,17,23,.88);
+  backdrop-filter:blur(12px);border-bottom:1px solid var(--line)
+}
+nav .wrap{display:flex;gap:4px;overflow-x:auto;padding:10px 24px}
+nav a{
+  color:var(--fg2);text-decoration:none;font-size:13.5px;padding:6px 12px;
+  border-radius:7px;white-space:nowrap;transition:.15s
+}
+nav a:hover{background:var(--bg3);color:var(--fg)}
+
+section{padding:56px 0;border-bottom:1px solid var(--line)}
+h2{
+  font-size:13px;text-transform:uppercase;letter-spacing:.13em;color:var(--blue);
+  margin:0 0 8px;font-weight:700
+}
+h3{font-size:21px;margin:32px 0 10px;letter-spacing:-.01em}
+h4{font-size:15px;margin:22px 0 8px;color:var(--fg)}
+p{color:var(--fg2);margin:0 0 14px}
+p strong,li strong{color:var(--fg);font-weight:600}
+code{
+  background:var(--bg3);padding:1.5px 6px;border-radius:5px;font-size:13px;
+  color:var(--cyan);border:1px solid var(--line)
+}
+a.ext{color:var(--blue)}
+
+/* ---------- cards ---------- */
+.card{
+  background:var(--bg2);border:1px solid var(--line);border-radius:12px;
+  padding:22px;margin:18px 0
+}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}
+
+.tag{
+  display:inline-block;font-size:11px;font-family:var(--mono);padding:2px 8px;
+  border-radius:5px;font-weight:600;letter-spacing:.03em;vertical-align:middle
+}
+.t-client{background:rgba(88,166,255,.14);color:var(--blue);border:1px solid rgba(88,166,255,.3)}
+.t-server{background:rgba(188,140,255,.14);color:var(--purple);border:1px solid rgba(188,140,255,.3)}
+.t-db{background:rgba(63,185,80,.14);color:var(--green);border:1px solid rgba(63,185,80,.3)}
+.t-net{background:rgba(210,153,34,.14);color:var(--amber);border:1px solid rgba(210,153,34,.3)}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+th{
+  text-align:left;padding:10px 12px;background:var(--bg3);color:var(--fg);
+  font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em;
+  border-bottom:1px solid var(--line2);white-space:nowrap
+}
+td{padding:10px 12px;border-bottom:1px solid var(--line);color:var(--fg2);vertical-align:top}
+tr:hover td{background:rgba(255,255,255,.015)}
+td code{font-size:12.5px}
+.p{font-family:var(--mono);font-size:12.5px;color:var(--cyan);white-space:nowrap}
+.mode{font-family:var(--mono);font-size:11.5px}
+
+/* ---------- pre ---------- */
+pre{
+  background:#010409;border:1px solid var(--line);border-radius:10px;
+  padding:16px;overflow-x:auto;font-size:12.5px;line-height:1.65;margin:16px 0;color:#c9d1d9
+}
+pre.sm{font-size:11.5px;line-height:1.5}
+pre .c{color:var(--fg3)}
+pre .k{color:var(--pink)}
+pre .s{color:var(--cyan)}
+pre .f{color:var(--green)}
+
+/* ---------- swimlane ---------- */
+.lanes{display:grid;grid-template-columns:1fr 58px 1fr 58px 1fr;gap:0;margin:24px 0;align-items:stretch}
+.lane{
+  background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:18px
+}
+.lane-h{
+  font-size:12px;font-family:var(--mono);font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;margin-bottom:4px
+}
+.lane-s{font-size:12.5px;color:var(--fg3);margin-bottom:14px;font-family:var(--mono)}
+.lane ul{list-style:none;padding:0;margin:0;font-size:13px}
+.lane li{
+  padding:6px 0 6px 16px;position:relative;color:var(--fg2);
+  border-top:1px solid rgba(255,255,255,.04)
+}
+.lane li:first-child{border-top:none}
+.lane li::before{content:"▸";position:absolute;left:0;color:var(--fg3);font-size:10px;top:8px}
+.lane li b{color:var(--fg);font-weight:600}
+.arrow{display:flex;align-items:center;justify-content:center;color:var(--fg3);font-size:19px}
+@media(max-width:1000px){.lanes{grid-template-columns:1fr}.arrow{padding:10px 0;transform:rotate(90deg)}}
+
+/* ---------- scenario ---------- */
+.tabs{display:flex;gap:8px;margin:22px 0 0;flex-wrap:wrap}
+.tab{
+  background:var(--bg3);border:1px solid var(--line);color:var(--fg2);
+  padding:10px 18px;border-radius:9px 9px 0 0;cursor:pointer;font-size:14px;
+  font-family:inherit;transition:.15s
+}
+.tab:hover{color:var(--fg)}
+.tab.on{background:var(--bg2);border-bottom-color:var(--bg2);color:var(--fg);font-weight:600}
+.pane{display:none;background:var(--bg2);border:1px solid var(--line);border-radius:0 12px 12px 12px;padding:24px}
+.pane.on{display:block}
+.pane h3{margin-top:0}
+
+.steps{counter-reset:s;list-style:none;padding:0;margin:20px 0}
+.steps li{
+  counter-increment:s;position:relative;padding:12px 0 12px 44px;
+  border-top:1px solid var(--line)
+}
+.steps li:first-child{border-top:none}
+.steps li::before{
+  content:counter(s);position:absolute;left:0;top:12px;width:26px;height:26px;
+  background:var(--bg3);border:1px solid var(--line2);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:12px;
+  font-family:var(--mono);color:var(--fg2)
+}
+.steps li b{color:var(--fg);display:block;margin-bottom:2px}
+.steps li span{color:var(--fg2);font-size:14px}
+
+.fate{
+  display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;
+  font-family:var(--mono);font-size:11.5px
+}
+.fate span{
+  padding:3px 9px;border-radius:5px;border:1px solid var(--line);
+  background:var(--bg3);color:var(--fg2)
+}
+.fate .c{color:var(--blue);border-color:rgba(88,166,255,.3);background:rgba(88,166,255,.08)}
+.fate .s{color:var(--purple);border-color:rgba(188,140,255,.3);background:rgba(188,140,255,.08)}
+.fate .d{color:var(--green);border-color:rgba(63,185,80,.3);background:rgba(63,185,80,.08)}
+.fate .v{color:var(--fg3);font-style:italic;border-style:dashed}
+
+/* ---------- resolver ---------- */
+.chain{counter-reset:r;list-style:none;padding:0;margin:20px 0}
+.chain li{
+  counter-increment:r;position:relative;padding:14px 16px 14px 52px;margin-bottom:8px;
+  background:var(--bg2);border:1px solid var(--line);border-radius:10px
+}
+.chain li::before{
+  content:counter(r);position:absolute;left:16px;top:14px;width:24px;height:24px;
+  border-radius:6px;background:var(--blue);color:#010409;display:flex;
+  align-items:center;justify-content:center;font-size:12px;font-weight:700;
+  font-family:var(--mono)
+}
+.chain li.hit{border-color:rgba(63,185,80,.45);background:rgba(63,185,80,.05)}
+.chain li.hit::before{background:var(--green)}
+.chain li b{color:var(--fg);display:block}
+.chain li span{color:var(--fg2);font-size:13.5px}
+
+/* ---------- svg ---------- */
+.diagram{background:#010409;border:1px solid var(--line);border-radius:12px;padding:8px;overflow-x:auto}
+.diagram svg{display:block;width:100%;height:auto;min-width:900px}
+.legend{display:flex;gap:18px;flex-wrap:wrap;margin:14px 0 0;font-size:12.5px;color:var(--fg2);font-family:var(--mono)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+.note{
+  background:rgba(210,153,34,.07);border:1px solid rgba(210,153,34,.3);
+  border-left-width:3px;border-radius:0 10px 10px 0;padding:14px 18px;margin:18px 0
+}
+.note b{color:var(--amber)}
+.note p{margin:0;color:var(--fg2);font-size:14px}
+.ok{
+  background:rgba(63,185,80,.07);border:1px solid rgba(63,185,80,.3);
+  border-left:3px solid var(--green);border-radius:0 10px 10px 0;padding:14px 18px;margin:18px 0
+}
+.ok b{color:var(--green)}
+.ok p{margin:0;color:var(--fg2);font-size:14px}
+footer{padding:40px 0 60px;color:var(--fg3);font-size:13px}
+footer a{color:var(--fg2)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;font-size:14px;margin:10px 0}
+.kv dt{color:var(--fg3);font-family:var(--mono);font-size:12.5px}
+.kv dd{margin:0;color:var(--fg2)}
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <h1>Where exa keeps <span>your data</span></h1>
+  <p class="sub">A complete map of the 27 tables, what lives on the developer's machine, what lives on the server, and — the part most people get wrong — what a web chat does <em>not</em> store by default.</p>
+  <div class="badges">
+    <span class="badge"><b>27</b> tables</span>
+    <span class="badge"><b>3</b> storage modes</span>
+    <span class="badge"><b>20</b> RLS-protected</span>
+    <span class="badge"><b>2</b> loop hosts</span>
+    <span class="badge"><b>2</b> DB drivers</span>
+    <span class="badge">Postgres · PGlite</span>
+  </div>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#topology">Topology</a>
+  <a href="#schema">Schema map</a>
+  <a href="#client">Client side</a>
+  <a href="#server">Server side</a>
+  <a href="#modes">Storage modes</a>
+  <a href="#scenarioA">Scenario A · CLI</a>
+  <a href="#scenarioB">Scenario B · Web</a>
+  <a href="#persist">Make it durable</a>
+  <a href="#security">Security</a>
+</div></nav>
+
+<!-- ============================================================ -->
+<section id="topology"><div class="wrap">
+  <h2>01 — Topology</h2>
+  <h3>Two clients, one server, two different places the loop runs</h3>
+  <p>
+    exa has exactly one agent loop. The question is <em>where</em> that loop executes, because
+    that single decision determines where every byte of your conversation ends up.
+  </p>
+
+  <div class="lanes">
+    <div class="lane">
+      <div class="lane-h" style="color:var(--blue)">◀ Client machine</div>
+      <div class="lane-s">the developer's laptop</div>
+      <ul>
+        <li><b>exa CLI</b> — loop runs HERE</li>
+        <li>tools touch real files</li>
+        <li><code>~/.exa/</code> credentials, sessions, snapshots</li>
+        <li>shadow git repo for undo/redo</li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="lane">
+      <div class="lane-h" style="color:var(--amber)">HTTPS + SSE</div>
+      <div class="lane-s">stateless-ish</div>
+      <ul>
+        <li>auth + token verify</li>
+        <li>policy, quota, usage</li>
+        <li>model gateway (pool / BYOK)</li>
+        <li>approvals broker</li>
+        <li>event stream</li>
+      </ul>
+    </div>
+    <div class="arrow">→</div>
+    <div class="lane">
+      <div class="lane-h" style="color:var(--purple)">Server</div>
+      <div class="lane-s">container / VM</div>
+      <ul>
+        <li><b>Web UI</b> — loop runs HERE for chats</li>
+        <li>per-chat sandbox container</li>
+        <li>all 27 tables</li>
+        <li>BYOK decryption at call time</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><b>The critical asymmetry.</b> A CLI session keeps its <em>files</em> on your machine forever
+    and its <em>text</em> on your machine by default. A web chat keeps its files in an ephemeral
+    sandbox and its text in server RAM — which means <strong>it is gone when the process restarts</strong>
+    unless an admin opts in. Most people assume the opposite of both.</p>
+  </div>
+</div></section>
+
+<!-- ============================================================ -->
+<section id="schema"><div class="wrap">
+  <h2>02 — Schema map</h2>
+  <h3>27 tables: 6 global, 20 tenant-scoped, 1 bookkeeping</h3>
+  <p>
+    The split is not cosmetic. <strong>Global tables</strong> have no row-level security and are read by
+    the auth layer running as the table <em>owner</em>. <strong>Tenant tables</strong> all carry RLS and
+    are only ever touched through <code>withTenant()</code>, which drops privileges to a non-owner role.
+  </p>
+
+  <div class="diagram">
+  <svg viewBox="0 0 1200 900" role="img" aria-label="exa database schema map">
+    <defs>
+      <marker id="a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L7,3.5 L0,7 z" fill="#6e7681"/>
+      </marker>
+      <marker id="ad" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <path d="M0,0 L7,3.5 L0,7 z" fill="#d29922"/>
+      </marker>
+    </defs>
+
+    <!-- GLOBAL -->
+    <text x="20" y="26" fill="#58a6ff" font-family="monospace" font-size="12" font-weight="700" letter-spacing="1.4">GLOBAL · NO RLS · AUTH LAYER READS AS OWNER</text>
+    <line x1="20" y1="34" x2="1180" y2="34" stroke="#21262d" stroke-width="1"/>
+
+    <g font-family="monospace" font-size="11">
+      <rect x="20" y="48" width="190" height="58" rx="7" fill="#161b22" stroke="#f778ba" stroke-width="1.4"/>
+      <text x="34" y="72" fill="#e6edf3" font-size="13" font-weight="700">tenants</text>
+      <text x="34" y="90" fill="#6e7681" font-size="10">slug · plan · status</text>
+      <text x="34" y="102" fill="#d29922" font-size="10">policy_version</text>
+
+      <rect x="250" y="48" width="190" height="58" rx="7" fill="#161b22" stroke="#f778ba" stroke-width="1.4"/>
+      <text x="264" y="72" fill="#e6edf3" font-size="13" font-weight="700">memberships</text>
+      <text x="264" y="90" fill="#6e7681" font-size="10">PK (tenant_id, user_id)</text>
+      <text x="264" y="102" fill="#6e7681" font-size="10">owner|admin|member|viewer</text>
+
+      <rect x="480" y="48" width="190" height="58" rx="7" fill="#161b22" stroke="#f778ba" stroke-width="1.4"/>
+      <text x="494" y="72" fill="#e6edf3" font-size="13" font-weight="700">users</text>
+      <text x="494" y="90" fill="#6e7681" font-size="10">email · auth_subject</text>
+      <text x="494" y="102" fill="#6e7681" font-size="10">global identity</text>
+
+      <rect x="710" y="48" width="210" height="58" rx="7" fill="#161b22" stroke="#f778ba" stroke-width="1.4"/>
+      <text x="724" y="72" fill="#e6edf3" font-size="13" font-weight="700">api_tokens</text>
+      <text x="724" y="90" fill="#6e7681" font-size="10">token_hash = sha256</text>
+      <text x="724" y="102" fill="#f85149" font-size="10">never the raw token</text>
+
+      <rect x="950" y="48" width="210" height="58" rx="7" fill="#161b22" stroke="#f778ba" stroke-width="1.4"/>
+      <text x="964" y="72" fill="#e6edf3" font-size="13" font-weight="700">device_codes</text>
+      <text x="964" y="90" fill="#6e7681" font-size="10">CLI login: ABCD-1234</text>
+      <text x="964" y="102" fill="#6e7681" font-size="10">single-use, 10 min</text>
+
+      <rect x="250" y="132" width="190" height="58" rx="7" fill="#161b22" stroke="#6e7681" stroke-width="1.2" stroke-dasharray="4 3"/>
+      <text x="264" y="156" fill="#e6edf3" font-size="13" font-weight="700">model_backends</text>
+      <text x="264" y="174" fill="#6e7681" font-size="10">the exa tier catalog</text>
+      <text x="264" y="186" fill="#6e7681" font-size="10">no tenant link</text>
+    </g>
+
+    <g stroke="#6e7681" stroke-width="1.3" fill="none" marker-end="url(#a)" opacity=".75">
+      <line x1="212" y1="77" x2="246" y2="77"/>
+      <line x1="442" y1="77" x2="476" y2="77"/>
+      <line x1="672" y1="77" x2="706" y2="77"/>
+      <line x1="922" y1="77" x2="946" y2="77"/>
+    </g>
+
+    <!-- TENANT -->
+    <text x="20" y="232" fill="#3fb950" font-family="monospace" font-size="12" font-weight="700" letter-spacing="1.4">TENANT-SCOPED · 20 TABLES · ROW-LEVEL SECURITY ON EVERY ONE</text>
+    <line x1="20" y1="240" x2="1180" y2="240" stroke="#21262d" stroke-width="1"/>
+
+    <g font-family="monospace" font-size="11">
+      <!-- config -->
+      <text x="20" y="262" fill="#6e7681" font-size="10" letter-spacing="1">CONFIG &amp; POLICY</text>
+      <rect x="20" y="270" width="190" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="33" y="292" fill="#e6edf3" font-size="12.5" font-weight="700">projects</text>
+      <text x="33" y="309" fill="#6e7681" font-size="10">unique (tenant_id, name)</text>
+
+      <rect x="20" y="334" width="190" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="33" y="356" fill="#e6edf3" font-size="12.5" font-weight="700">settings</text>
+      <text x="33" y="373" fill="#6e7681" font-size="10">PK (scope, scope_id, key)</text>
+
+      <rect x="20" y="398" width="190" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="33" y="420" fill="#e6edf3" font-size="12.5" font-weight="700">permission_rules</text>
+      <text x="33" y="437" fill="#6e7681" font-size="10">pattern → allow/ask/deny</text>
+
+      <!-- secrets + extensions -->
+      <text x="250" y="262" fill="#6e7681" font-size="10" letter-spacing="1">SECRETS &amp; EXTENSIONS</text>
+      <rect x="250" y="270" width="190" height="52" rx="7" fill="#161b22" stroke="#f85149" stroke-width="1.3"/>
+      <text x="263" y="292" fill="#e6edf3" font-size="12.5" font-weight="700">provider_keys</text>
+      <text x="263" y="309" fill="#f85149" font-size="10">ciphertext + wrapped_dek</text>
+
+      <rect x="250" y="334" width="190" height="52" rx="7" fill="#161b22" stroke="#f85149" stroke-width="1.3"/>
+      <text x="263" y="356" fill="#e6edf3" font-size="12.5" font-weight="700">secrets</text>
+      <text x="263" y="373" fill="#6e7681" font-size="10">same envelope scheme</text>
+
+      <rect x="250" y="398" width="190" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="263" y="420" fill="#e6edf3" font-size="12.5" font-weight="700">mcp_servers</text>
+      <text x="263" y="437" fill="#6e7681" font-size="10">stdio · http</text>
+
+      <rect x="250" y="462" width="190" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="263" y="484" fill="#e6edf3" font-size="12.5" font-weight="700">skills</text>
+      <text x="263" y="501" fill="#6e7681" font-size="10">org + user scoped</text>
+
+      <rect x="250" y="526" width="190" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="263" y="548" fill="#e6edf3" font-size="12.5" font-weight="700">agent_definitions</text>
+      <text x="263" y="565" fill="#6e7681" font-size="10">primary | subagent | all</text>
+
+      <rect x="250" y="590" width="190" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="263" y="612" fill="#e6edf3" font-size="12.5" font-weight="700">commands</text>
+      <text x="263" y="629" fill="#6e7681" font-size="10">slash commands</text>
+
+      <!-- hub -->
+      <text x="510" y="262" fill="#6e7681" font-size="10" letter-spacing="1">CONVERSATION HUB</text>
+      <rect x="510" y="272" width="230" height="104" rx="8" fill="#132b1a" stroke="#3fb950" stroke-width="1.8"/>
+      <text x="524" y="296" fill="#e6edf3" font-size="14" font-weight="700">sessions</text>
+      <text x="524" y="314" fill="#6e7681" font-size="10">loop_host · storage_mode</text>
+      <text x="524" y="328" fill="#d29922" font-size="10">the key column — see below</text>
+      <text x="524" y="342" fill="#6e7681" font-size="10">tokens_* · cost_usd</text>
+      <text x="524" y="356" fill="#6e7681" font-size="10">parent_id → subagent tree</text>
+
+      <rect x="510" y="396" width="230" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="523" y="418" fill="#e6edf3" font-size="12.5" font-weight="700">session_leases</text>
+      <text x="523" y="435" fill="#6e7681" font-size="10">PK = session_id · fencing</text>
+
+      <!-- right column -->
+      <text x="800" y="262" fill="#6e7681" font-size="10" letter-spacing="1">CONTENT · ONLY WHEN storage_mode='server'</text>
+      <rect x="800" y="272" width="200" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="813" y="294" fill="#e6edf3" font-size="12.5" font-weight="700">messages</text>
+      <text x="813" y="311" fill="#6e7681" font-size="10">one row per turn</text>
+
+      <rect x="800" y="336" width="200" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="813" y="358" fill="#e6edf3" font-size="12.5" font-weight="700">parts</text>
+      <text x="813" y="375" fill="#6e7681" font-size="10">text · tool · diff · blob_ref</text>
+
+      <rect x="800" y="400" width="200" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="813" y="422" fill="#e6edf3" font-size="12.5" font-weight="700">todos</text>
+      <text x="813" y="439" fill="#6e7681" font-size="10">PK (session_id, position)</text>
+
+      <rect x="800" y="464" width="200" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="813" y="486" fill="#e6edf3" font-size="12.5" font-weight="700">session_events</text>
+      <text x="813" y="503" fill="#6e7681" font-size="10">outbox — SSE resume</text>
+
+      <rect x="800" y="546" width="200" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="813" y="568" fill="#e6edf3" font-size="12.5" font-weight="700">approvals</text>
+      <text x="813" y="585" fill="#6e7681" font-size="10">any client can answer</text>
+
+      <rect x="510" y="620" width="230" height="52" rx="7" fill="#0d2417" stroke="#3fb950" stroke-width="1.3"/>
+      <text x="523" y="642" fill="#e6edf3" font-size="12.5" font-weight="700">usage_events</text>
+      <text x="523" y="659" fill="#6e7681" font-size="10">RANGE partitioned by month</text>
+
+      <rect x="800" y="620" width="200" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="813" y="642" fill="#e6edf3" font-size="12.5" font-weight="700">usage_rollups</text>
+      <text x="813" y="659" fill="#6e7681" font-size="10">pre-aggregated → quotas</text>
+
+      <rect x="510" y="700" width="230" height="52" rx="7" fill="#0d2417" stroke="#3fb950" stroke-width="1.3"/>
+      <text x="523" y="722" fill="#e6edf3" font-size="12.5" font-weight="700">audit_log</text>
+      <text x="523" y="739" fill="#6e7681" font-size="10">RANGE partitioned by month</text>
+
+      <rect x="800" y="700" width="200" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="813" y="722" fill="#e6edf3" font-size="12.5" font-weight="700">quotas</text>
+      <text x="813" y="739" fill="#6e7681" font-size="10">tokens · cost · requests</text>
+
+      <rect x="1020" y="700" width="140" height="52" rx="7" fill="#161b22" stroke="#3d444d"/>
+      <text x="1033" y="722" fill="#e6edf3" font-size="12.5" font-weight="700">exa_migrations</text>
+      <text x="1033" y="739" fill="#6e7681" font-size="10">bookkeeping</text>
+    </g>
+
+    <!-- connectors -->
+    <g stroke="#6e7681" stroke-width="1.3" fill="none" marker-end="url(#a)" opacity=".8">
+      <polyline points="742,300 770,300 770,298 798,298"/>
+      <polyline points="742,315 784,315 784,362 798,362"/>
+      <line x1="742" y1="330" x2="798" y2="426"/>
+      <polyline points="742,345 795,345 795,490 798,490"/>
+      <line x1="625" y1="376" x2="625" y2="394"/>
+      <polyline points="742,422 770,422 770,572 798,572"/>
+      <line x1="625" y1="448" x2="625" y2="618"/>
+      <polyline points="742,646 770,646 770,646 798,646"/>
+      <line x1="900" y1="324" x2="900" y2="334"/>
+      <line x1="900" y1="388" x2="900" y2="398"/>
+      <line x1="900" y1="452" x2="900" y2="462"/>
+      <line x1="900" y1="598" x2="900" y2="618"/>
+      <line x1="625" y1="672" x2="625" y2="698"/>
+    </g>
+    <g stroke="#d29922" stroke-width="1.3" fill="none" stroke-dasharray="5 4" marker-end="url(#ad)" opacity=".8">
+      <polyline points="212,360 470,360 470,330 508,330"/>
+      <polyline points="442,296 480,296 480,290 508,290"/>
+    </g>
+    <text x="486" y="272" fill="#d29922" font-family="monospace" font-size="9">BYOK</text>
+    <text x="476" y="352" fill="#d29922" font-family="monospace" font-size="9">config</text>
+  </svg>
+  </div>
+
+  <div class="legend">
+    <span><i style="background:#f778ba"></i>global (no RLS)</span>
+    <span><i style="background:#3fb950"></i>tenant + partitioned</span>
+    <span><i style="background:#f85149"></i>encrypted at rest</span>
+    <span><i style="background:#6e7681"></i>regular tenant table</span>
+    <span><i style="background:#d29922"></i>dashed = policy/credential dependency</span>
+  </div>
+
+  <div class="note">
+    <p><b>Why <code>messages</code> and <code>parts</code> are two tables.</b>
+    Streaming. If the whole assistant turn lived in one <code>messages.data</code> JSONB blob, every
+    token would rewrite the entire turn. Split out, a streaming update touches <em>one small part row</em>.
+    <code>blob_ref</code> pushes large tool output out of the row entirely.</p>
+  </div>
+</div></section>
+
+<!-- ============================================================ -->
+<section id="client"><div class="wrap">
+  <h2>03 — Client side</h2>
+  <h3>Everything on the developer's machine, under <code>~/.exa/</code></h3>
+  <p>
+    This exists whether or not a server is involved. Local mode uses all of it and talks to nobody.
+    Server mode uses the credentials part and adds an API conversation.
+  </p>
+
+  <table>
+    <thead><tr><th>Path</th><th>Contains</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td class="p">~/.exa/credentials.json</td><td>server URL, API token, tenant, email, pinned policy-signing key</td><td><span class="mode" style="color:var(--amber)">0600</span> · dir <span class="mode">0700</span></td></tr>
+      <tr><td class="p">~/.exa/config.json</td><td>local prefs — model, agent, permission mode, storage mode, local rules</td><td><span class="mode" style="color:var(--amber)">0600</span></td></tr>
+      <tr><td class="p">~/.exa/sessions/&lt;uuid&gt;.jsonl</td><td><b>conversation content</b> when <code>storage_mode='local'</code></td><td>append-only, <span class="mode" style="color:var(--amber)">0600</span>, torn last line skipped on load</td></tr>
+      <tr><td class="p">~/.exa/snapshots/&lt;hash&gt;</td><td>shadow git dir for undo/redo</td><td>separate from your project's <code>.git</code></td></tr>
+      <tr><td class="p">~/.exa/tool-output/&lt;sid&gt;/</td><td>large tool outputs spilled to disk</td><td>per session</td></tr>
+      <tr><td class="p">~/.exa/mcp.json</td><td>MCP server definitions</td><td>project-local also read</td></tr>
+      <tr><td class="p">~/.exa/AGENTS.md</td><td>global instructions</td><td>project files take precedence</td></tr>
+      <tr><td class="p">~/.exa/skills/</td><td>global <code>SKILL.md</code> skills</td><td><code>.exa/.agents/.claude/.opencode</code> also scanned</td></tr>
+      <tr><td class="p">~/.exa/agents/*.md</td><td>custom agents (incl. subagents)</td><td>YAML-ish frontmatter</td></tr>
+      <tr><td class="p">~/.exa/commands/*.md</td><td>custom slash commands</td><td>&nbsp;</td></tr>
+      <tr><td class="p">&lt;your-repo&gt;/</td><td><b>the actual files the agent edits</b></td><td>never leaves your disk unless you commit it</td></tr>
+      <tr><td class="p">~/.exa/server/pg</td><td>embedded PGlite DB (server, if self-hosted single-node)</td><td><code>EXA_DATA_DIR</code> overrides</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The browser keeps exactly one thing</h3>
+  <pre class="sm"><span class="c">// apps/web/public/app.js</span>
+localStorage[<span class="s">"exa.token"</span>]   <span class="c">// ← the entire client-side state</span></pre>
+  <p>
+    No conversation, no session list, no files — nothing. The web UI is a thin view over the server.
+    Clear it and you're logged out; the server still holds everything it was told to keep.
+  </p>
+</div></section>
+
+<!-- ============================================================ -->
+<section id="server"><div class="wrap">
+  <h2>04 — Server side</h2>
+  <h3>What a cloud deployment holds</h3>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Where</th><th>Holds</th></tr></thead>
+    <tbody>
+      <tr><td><b>Database</b></td><td class="p">Postgres (DATABASE_URL)<br>or PGlite (EXA_DATA_DIR)</td><td>all 27 tables — sessions, content, keys, usage, audit</td></tr>
+      <tr><td><b>Pool keys</b></td><td class="p">process env</td><td>provider API keys for the shared <code>exa</code> model</td></tr>
+      <tr><td><b>Master key</b></td><td class="p">EXA_MASTER_KEY</td><td>unwraps every BYOK data key; versioned for rotation</td></tr>
+      <tr><td><b>JWT secret</b></td><td class="p">EXA_JWT_SECRET</td><td>signs browser + CLI tokens (HMAC-SHA256)</td></tr>
+      <tr><td><b>OIDC config</b></td><td class="p">EXA_OIDC_*</td><td>issuer, audience, tenant claim</td></tr>
+      <tr><td><b>Sandbox</b></td><td class="p">per-chat container</td><td>files a web chat creates; no network, read-only root, non-root, CPU/mem/pids caps</td></tr>
+      <tr><td><b>BYOK plaintext</b></td><td class="p">RAM only</td><td>decrypted at call time in the gateway, never stored or logged</td></tr>
+    </tbody>
+  </table>
+
+  <div class="ok">
+    <p><b>Tenancy is enforced in the database, not the app.</b> All 20 tenant tables carry RLS and are
+    only reachable through <code>withTenant()</code>, which opens a transaction, sets
+    <code>exa.tenant_id</code>, and drops to the non-owner <code>exa_app</code> role. If a tenant id is
+    never set, the policy resolves to <code>tenant_id = NULL</code> — which matches nothing.
+    <strong>A forgotten scope returns zero rows, not every row.</strong></p>
+  </div>
+</div></section>
+
+<!-- ============================================================ -->
+<section id="modes"><div class="wrap">
+  <h2>05 — Storage modes</h2>
+  <h3>The resolver decides everything. Read this before assuming.</h3>
+  <p>
+    <code>resolveStorageMode()</code> in <code>apps/server/src/routes/sessions.ts:25</code> is the single
+    source of truth. First match wins.
+  </p>
+
+  <ol class="chain">
+    <li><b>Org locked <code>storage.mode</code></b><span>Admin set it with <code>locked: true</code>. Outranks everything, including an explicit client request.</span></li>
+    <li><b>Explicit request</b><span>The client passed <code>--storage</code> or the web UI asked for it.</span></li>
+    <li><b>Org <code>storage.mode</code> setting</b><span>Set but not locked.</span></li>
+    <li class="hit"><b>Default, by loop host</b><span><code>loopHost === "client" ? "local" : "none"</code> — <b style="color:var(--blue)">CLI gets <code>local</code></b>, <b style="color:var(--purple)">web gets <code>none</code></b>.</span></li>
+    <li><b>Coercion</b><span>Requesting <code>local</code> on a server loop is rejected with a 400 — "storage mode local needs a client loop" — then forced to <code>none</code>.</span></li>
+    <li><b>Org allowlist</b><span><code>storage.allowed</code> must contain the mode. Lock it to <code>["none"]</code> and no user can ever get content on the server.</span></li>
+  </ol>
+
+  <div class="note">
+    <p><b>The headline.</b> A default web chat runs in <code>storage_mode = 'none'</code>. Its messages and
+    parts live in an LRU-bounded in-memory cache on the server and <strong>disappear on restart</strong>.
+    There is a test asserting exactly this: <code>expect(created.body.storageMode).toBe("none")</code>.
+    If you want web chats to persist, an admin must set <code>storage.mode = "server"</code>.</p>
+  </div>
+
+  <table>
+    <thead><tr><th>Mode</th><th>Conversation text</th><th>Session row</th><th>Usage / audit</th><th>Survives restart</th></tr></thead>
+    <tbody>
+      <tr><td><span class="mode" style="color:var(--fg)">none</span></td><td>server RAM only</td><td>stored</td><td>stored</td><td style="color:var(--amber)">metadata only</td></tr>
+      <tr><td><span class="mode" style="color:var(--blue)">local</span></td><td><b>client</b> — <code>~/.exa/sessions/*.jsonl</code></td><td>stored</td><td>stored</td><td style="color:var(--green)">metadata + local file</td></tr>
+      <tr><td><span class="mode" style="color:var(--purple)">server</span></td><td><b>Postgres</b> — <code>messages</code> + <code>parts</code></td><td>stored</td><td>stored</td><td style="color:var(--green)">everything</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:13.5px">Session metadata, token counters, cost, usage events and audit are written in <em>all three</em> modes. Only the conversation text varies.</p>
+</div></section>
+
+<!-- ============================================================ -->
+<section id="scenarioA"><div class="wrap">
+  <h2>06 — Scenarios</h2>
+  <h3>Two concrete journeys, step by step</h3>
+
+  <div class="tabs">
+    <button class="tab on" onclick="tab('A',this)">A · Self-hosted + CLI</button>
+    <button class="tab" onclick="tab('B',this)">B · Cloud + Web UI</button>
+  </div>
+
+  <!-- SCENARIO A -->
+  <div class="pane on" id="A">
+    <h3 style="color:var(--blue)">A — Someone installs exa on their own laptop and uses the CLI</h3>
+    <p>
+      No cloud account. They ran <code>bun run dev</code> locally, or <code>exa login --dev</code> against
+      their own machine, or just <code>exa --local</code> with no server at all.
+      They type <code>refactor the auth module</code> in <code>~/code/my-repo</code>.
+    </p>
+
+    <ol class="steps">
+      <li>
+        <b>The loop starts on their laptop</b>
+        <span>Not on a server. <code>apps/cli</code> instantiates <code>@exa/core</code> directly and injects local ports.</span>
+        <div class="fate"><span class="c">loop_host = 'client'</span><span class="d">storage_mode = 'local'</span><span class="v">default for CLI</span></div>
+      </li>
+      <li>
+        <b>The model call leaves the machine</b>
+        <span>Either straight to the provider with their own key (local mode), or to the server gateway which holds the pool keys. Either way, the <em>prompt text crosses the network</em>.</span>
+        <div class="fate"><span class="net" style="color:var(--amber);border-color:rgba(210,153,34,.3);background:rgba(210,153,34,.08)">prompt → provider API</span></div>
+      </li>
+      <li>
+        <b>The agent reads and edits files</b>
+        <span><code>edit</code> / <code>bash</code> run <code>bash</code> and <code>apply_patch</code> against <code>~/code/my-repo</code>. The server never sees this.</span>
+        <div class="fate"><span class="c">files stay on disk</span></div>
+      </li>
+      <li>
+        <b>Each step is snapshotted locally</b>
+        <span>A commit into <code>~/.exa/snapshots/&lt;hash&gt;</code> — a shadow repo with its own git-dir. Your project's <code>.git</code> is untouched.</span>
+        <div class="fate"><span class="c">~/.exa/snapshots/</span></div>
+      </li>
+      <li>
+        <b>The turn is appended to a local JSONL file</b>
+        <span><code>JsonlStore</code> writes one record per message and per part, <code>0600</code>. Crash-safe: a torn last line is skipped on load.</span>
+        <div class="fate"><span class="c">~/.exa/sessions/&lt;uuid&gt;.jsonl</span><span class="v">NO messages/parts rows</span></div>
+      </li>
+      <li>
+        <b>Metadata and telemetry are ingested</b>
+        <span>The CLI POSTs a compact step record. The server writes a <code>sessions</code> row, a <code>usage_events</code> row (tokens, cost, model, latency), and eventually <code>audit_log</code>.</span>
+        <div class="fate"><span class="d">sessions</span><span class="d">usage_events</span><span class="d">usage_rollups</span><span class="d">audit_log</span></div>
+      </li>
+      <li>
+        <b>An approval is pending (if the tool needed one)</b>
+        <span><code>edit</code> and non-safe <code>bash</code> require approval. The row is written server-side so <em>any</em> attached client can answer — approve from the browser, or the CLI terminal races it. First answer wins.</span>
+        <div class="fate"><span class="d">approvals</span><span class="d">session_events</span></div>
+      </li>
+    </ol>
+
+    <h4>Net result</h4>
+    <div class="grid2">
+      <div class="card">
+        <h4 style="margin-top:0"><span class="tag t-client">CLIENT</span></h4>
+        <ul style="margin:0;padding-left:18px;color:var(--fg2);font-size:14px">
+          <li>Your source code — <b>always</b></li>
+          <li>Full conversation text</li>
+          <li>Undo/redo snapshots</li>
+          <li>The API token</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0"><span class="tag t-db">SERVER</span></h4>
+        <ul style="margin:0;padding-left:18px;color:var(--fg2);font-size:14px">
+          <li>Session metadata, model, timestamps</li>
+          <li>Token counts + cost</li>
+          <li>Audit trail of actions</li>
+          <li>Approval decisions</li>
+          <li class="color:var(--red);color:var(--red)"><b>Not your code. Not your conversation text.</b></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCENARIO B -->
+  <div class="pane" id="B">
+    <h3 style="color:var(--purple)">B — You deploy to cloud, a user signs up and chats in the browser</h3>
+    <p>
+      <code>docker compose up</code> behind a domain, OIDC SSO on, dev auth off. A new user opens the
+      site, signs in with their work account, and starts a chat. The org slug comes from the OIDC
+      tenant claim — the org is auto-created on first sign-in.
+    </p>
+
+    <ol class="steps">
+      <li>
+        <b>The browser stores one token</b>
+        <span><code>localStorage["exa.token"]</code>. That's the whole client. Sign-in returns a signed JWT (<code>typ: "web"</code>, HMAC-SHA256) carrying <code>sub</code>, <code>tid</code>, <code>role</code>.</span>
+        <div class="fate"><span class="c">localStorage: token only</span></div>
+      </li>
+      <li>
+        <b>The server creates the identity</b>
+        <span>The ID token's signature is verified against the issuer's JWKS. A <code>users</code> row and a <code>memberships</code> row are upserted. Both are global tables — no RLS, read as owner.</span>
+        <div class="fate"><span class="s">users</span><span class="s">memberships</span></div>
+      </li>
+      <li>
+        <b>A session is created — and the mode defaults to <code>none</code></b>
+        <span><code>loop_host = 'server'</code>, so the resolver picks <code>none</code>. Messages go to an in-memory LRU cache. No <code>messages</code> or <code>parts</code> rows are written.</span>
+        <div class="fate"><span class="d">sessions</span><span class="v">messages/parts → RAM only</span></div>
+      </li>
+      <li>
+        <b>The loop runs on the server</b>
+        <span>Same <code>@exa/core</code>, sandbox executor. Files live in a per-chat container: no network, read-only root, non-root, CPU/memory/pids caps. Or with no Docker configured, file tools only — no shell.</span>
+        <div class="fate"><span class="s">sandbox container</span><span class="v">ephemeral</span></div>
+      </li>
+      <li>
+        <b>The gateway resolves a key</b>
+        <span>User BYOK first, then org pool. <code>provider_keys.ciphertext</code> is unwrapped via <code>wrapped_dek</code> + <code>EXA_MASTER_KEY</code>. Plaintext exists in gateway RAM for the duration of the call and is never persisted or logged.</span>
+        <div class="fate"><span class="d">provider_keys (envelope)</span><span class="s">decrypt → RAM → call</span></div>
+      </li>
+      <li>
+        <b>Every step is recorded — always</b>
+        <span><code>usage_events</code> (partitioned, appended) rolled up into <code>usage_rollups</code> and checked against <code>quotas</code>. Content only lands in <code>messages</code>/<code>parts</code> if an admin set <code>storage.mode = 'server'</code>.</span>
+        <div class="fate"><span class="d">usage_events</span><span class="d">usage_rollups</span><span class="d">session_events</span><span class="d">audit_log</span></div>
+      </li>
+      <li>
+        <b>Retention runs on a schedule</b>
+        <span><code>exa_ensure_partitions(2)</code> pre-creates partitions. <code>exa_drop_old_partitions(N)</code> drops whole months — a <code>DROP TABLE</code>, not a row-by-row delete. Content retention is per-org (<code>retention.contentDays</code>, default 30).</span>
+        <div class="fate"><span class="d">DROP PARTITION</span></div>
+      </li>
+    </ol>
+
+    <h4>Net result</h4>
+    <div class="grid2">
+      <div class="card">
+        <h4 style="margin-top:0"><span class="tag t-client">BROWSER</span></h4>
+        <ul style="margin:0;padding-left:18px;color:var(--fg2);font-size:14px">
+          <li>One JWT in <code>localStorage</code></li>
+          <li>Nothing else, ever</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0"><span class="tag t-db">SERVER / POSTGRES</span></h4>
+        <ul style="margin:0;padding-left:18px;color:var(--fg2);font-size:14px">
+          <li>Identity, membership, role</li>
+          <li>Session metadata + tokens + cost</li>
+          <li>Full audit trail</li>
+          <li>Encrypted BYOK (ciphertext only)</li>
+          <li>Conversation text <b>only if <code>storage.mode='server'</code></b></li>
+          <li>Sandbox files — until the container dies</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<!-- ============================================================ -->
+<section id="persist"><div class="wrap">
+  <h2>07 — Make it durable</h2>
+  <h3>How to store web chats in Postgres instead of ephemeral memory</h3>
+
+  <div class="note">
+    <p><b>First, a clarification.</b> RAM is not a third storage location competing with disk and
+    database. There are exactly two durable outcomes — <code>none</code> (working buffer only) or
+    <code>server</code> (Postgres). <code>none</code> does not mean "the database was full" or
+    "we fell back"; it means <strong>"this org has not opted into persisting content."</strong>
+    Session <em>metadata</em>, token counts, cost, usage and audit are already durable in every mode —
+    only the conversation text branches.</p>
+  </div>
+
+  <h4>What changes when you flip it</h4>
+  <table>
+    <thead><tr><th></th><th><code>storage.mode = "none"</code> <span style="font-weight:400;text-transform:none">(current default for web)</span></th><th><code>storage.mode = "server"</code> <span style="font-weight:400;text-transform:none">(what you want)</span></th></tr></thead>
+    <tbody>
+      <tr><td><b>Chat text</b></td><td>server RAM, LRU cache (500 sessions)</td><td style="color:var(--green)"><code>messages</code> + <code>parts</code> rows</td></tr>
+      <tr><td><b>Survives restart</b></td><td style="color:var(--amber)">metadata only</td><td style="color:var(--green)">full history</td></tr>
+      <tr><td><b>Backed up</b></td><td style="color:var(--amber)">no</td><td style="color:var(--green)">yes</td></tr>
+      <tr><td><b>Queryable / exportable</b></td><td style="color:var(--amber)">no</td><td style="color:var(--green)">yes</td></tr>
+      <tr><td><b>Retention policy</b></td><td>n/a</td><td style="color:var(--green)"><code>retention.contentDays</code> (30)</td></tr>
+      <tr><td><b>RAM cost</b></td><td>holds up to 500 sessions' text</td><td style="color:var(--green)">content never loaded until read</td></tr>
+    </tbody>
+  </table>
+
+  <h4>⚠ Side effect: this applies to CLI sessions too</h4>
+  <p><code>resolveStorageMode()</code> checks <code>lockedMode</code> and the tenant
+  <code>storage.mode</code> setting <strong>before</strong> branching on <code>loopHost</code> — there is no
+  per-host distinction. So setting <code>storage.mode = "server"</code> makes <b>new CLI sessions store their
+  conversation text in Postgres as well</b>, instead of <code>~/.exa/sessions/*.jsonl</code>.
+  That is the opposite of the "CLI keeps data on your own machine" model.</p>
+  <table>
+    <thead><tr><th>Configuration</th><th>Web chat</th><th>New CLI session</th><th>User can opt out?</th></tr></thead>
+    <tbody>
+      <tr><td><code>storage.mode="server"</code>, <b>locked</b></td><td style="color:var(--green)">Postgres</td><td style="color:var(--amber)">Postgres</td><td style="color:var(--amber)">no</td></tr>
+      <tr><td><code>storage.mode="server"</code>, unlocked</td><td style="color:var(--green)">Postgres</td><td style="color:var(--amber)">Postgres</td><td style="color:var(--green)">yes — <code>--storage local</code> wins</td></tr>
+      <tr><td><code>storage.mode="local"</code>, locked</td><td style="color:var(--amber)">coerced to <code>none</code></td><td style="color:var(--green)">local JSONL</td><td>n/a</td></tr>
+    </tbody>
+  </table>
+  <p><b>Recommendation for a cloud deployment:</b> set <code>storage.mode = "server"</code> and leave it
+  <b>unlocked</b>. Web chats persist by default; CLI developers who want their transcripts to stay on disk
+  pass <code>--storage local</code> and it is honoured. Lock it only if your compliance rules demand that
+  no conversation may exist outside the database.</p>
+  <p style="font-size:13.5px">Existing sessions are unaffected — <code>storage_mode</code> is written once
+  into the <code>sessions</code> row at creation and read from there thereafter. Only <em>new</em> sessions
+  pick up the new default.</p>
+
+  <h4>How to set it — three ways</h4>
+
+  <h4 style="color:var(--purple)">A · Web UI <span style="color:var(--fg3);font-weight:400">(easiest)</span></h4>
+  <p>Sign in as an <b>owner</b> or <b>admin</b> → <b>Organization settings</b> → <b>Chat storage</b> →
+  choose <code>server</code> → tick <b>lock</b> → save. Locking stops any user overriding it back.</p>
+
+  <h4 style="color:var(--purple)">B · API</h4>
+<pre class="sm">curl -X PUT http://127.0.0.1:4317/v1/settings \
+  -H "authorization: Bearer $EXA_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"scope":"tenant","key":"storage.mode","value":"server","locked":true}'
+
+<span class="c"># optional: also lock the allowlist so nothing else is permitted</span>
+curl -X PUT http://127.0.0.1:4317/v1/settings \
+  -H "authorization: Bearer $EXA_TOKEN" -H "content-type: application/json" \
+  -d '{"scope":"tenant","key":"storage.allowed","value":["none","server"],"locked":true}'</pre>
+  <p style="font-size:13.5px"><code>scope:"tenant"</code> requires <code>role ∈ {owner, admin}</code> —
+  enforced at <code>admin.ts:10</code>. Every change bumps <code>tenants.policy_version</code> and writes an
+  audit row.</p>
+
+  <h4 style="color:var(--purple)">C · Direct SQL <span style="color:var(--fg3);font-weight:400">(bootstrap / disaster recovery)</span></h4>
+<pre class="sm">insert into settings (tenant_id, scope, scope_id, key, value, locked, updated_by)
+values ('&lt;tenant-uuid&gt;', 'tenant', '&lt;tenant-uuid&gt;', 'storage.mode',
+        '"server"'::jsonb, true, null)
+on conflict (tenant_id, scope, scope_id, key)
+do update set value = excluded.value, locked = excluded.locked;</pre>
+  <p style="font-size:13.5px">Must run as the table <b>owner</b>, not <code>exa_app</code> — the
+  <code>exa_app</code> role only has DML grants on tenant tables, and RLS won't let it see other tenants anyway.</p>
+
+  <h4>Which database is "the database"?</h4>
+  <table>
+    <thead><tr><th>Setup</th><th>Command</th><th>Where content lives</th><th>Production?</th></tr></thead>
+    <tbody>
+      <tr><td>Embedded PGlite</td><td class="p">bun run dev</td><td>directory <code>~/.exa/server/pg</code></td><td style="color:var(--amber)">no — single node, no replication</td></tr>
+      <tr><td>Postgres container</td><td class="p">docker compose up -d</td><td>own volume <code>pgdata</code>, separate service</td><td style="color:var(--green)">yes</td></tr>
+      <tr><td>Managed Postgres</td><td class="p">DATABASE_URL=…rds…</td><td>RDS / Cloud SQL, backups + PITR</td><td style="color:var(--green)">recommended</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:13.5px">The first two are the <em>same database</em>, different packaging — PGlite
+  is Postgres compiled to WASM. "The database" and "the VM's disk" only look like different things
+  because in dev the data directory is a plain folder on your own machine.</p>
+
+  <h4>One caveat about the RAM cache</h4>
+  <p>The LRU bound counts <b>sessions, not bytes</b> (<code>maxMemorySessions = 500</code>,
+  <code>sessions.ts:314</code>). 500 large sessions could still be substantial. That's only relevant while
+  you're on <code>none</code>; once you switch to <code>server</code>, content is only loaded when a
+  conversation is actually opened. If you want the bound to be a true memory guarantee, a byte-based
+  limit in <code>ServerSessionStore</code> would be the place to add it.</p>
+</div></section>
+
+<!-- ============================================================ -->
+<section id="security"><div class="wrap">
+  <h2>08 — Security</h2>
+  <h3>The five mechanisms that make this safe to host</h3>
+
+  <table>
+    <thead><tr><th>Mechanism</th><th>How</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>RLS fail-closed</b></td>
+        <td>Non-owner <code>exa_app</code> role ⇒ policies apply. <code>nullif(current_setting(...))</code> means an unset tenant id matches nothing — zero rows, never all rows.</td>
+        <td class="p">db.ts:49<br>schema.ts:361</td>
+      </tr>
+      <tr>
+        <td><b>Transaction-scoped tenant</b></td>
+        <td><code>set_config(..., true)</code> dies with the transaction, so a pooled connection can never carry tenant A into tenant B.</td>
+        <td class="p">db.ts:20</td>
+      </tr>
+      <tr>
+        <td><b>Envelope encryption</b></td>
+        <td>Per-secret data key encrypts the payload; the master key wraps the data key. <code>key_version</code> enables rotation without re-encrypting.</td>
+        <td class="p">schema.ts:145</td>
+      </tr>
+      <tr>
+        <td><b>Token hashing</b></td>
+        <td>API tokens stored as <code>sha256(bytes)</code>. The raw token is shown once at creation. A DB dump yields nothing usable.</td>
+        <td class="p">identity.ts:28</td>
+      </tr>
+      <tr>
+        <td><b>Locked secret floor</b></td>
+        <td><code>.env</code>, <code>*.pem</code>, <code>*.key</code>, <code>~/.ssh/*</code> hard-denied in a second rule pass no session rule can outrank — even "always allow everything" can't read them.</td>
+        <td class="p">permission.ts:164</td>
+      </tr>
+      <tr>
+        <td><b>Fencing tokens</b></td>
+        <td>Lease counter bumps on every grant. A client whose lease expired while frozen can't write on thaw — its token is stale.</td>
+        <td class="p">sessions.ts:77</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <p><b>One gap worth knowing.</b> The "content only exists when <code>storage_mode='server'</code>" rule is
+    application convention, not a database constraint. Nothing stops a message row being written under a
+    <code>local</code> session. If you want that guaranteed, add a trigger. RLS already prevents
+    cross-<em>tenant</em> reads either way.</p>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  Generated from <code>packages/store/src/</code>, <code>apps/cli/src/</code>,
+  <code>apps/server/src/routes/sessions.ts</code>, <code>packages/core/src/</code> at
+  <code>2.0.0-alpha.0</code> · all paths and defaults verified against source.<br>
+  Open <code>docs/11-data-layout.html</code> directly, or serve it with
+  <code>python3 -m http.server</code>.
+</div></footer>
+
+<script>
+function tab(k, el){
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+  document.querySelectorAll('.pane').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById(k).classList.add('on');
+}
+</script>
+</body>
+</html>
