@@ -24,7 +24,7 @@ HTTP request
   → routes/        map URL + method to a controller method (a table, no logic)
   → controllers/   parse + validate input (zod DTO from models/), check role, call ONE service, shape the response
   → services/      business rules; plain inputs and outputs; no Request/Response, no SQL
-  → repositories/  SQL only; one repository per table group; returns models
+  → repositories/  database access only (Drizzle ORM); one repository per table group; returns models
   → models/        entities, DTOs and row types (data shapes, no logic)
 ```
 
@@ -34,7 +34,7 @@ The rest of the server is organized like this:
 |---|---|---|
 | `controllers/` | `session.controller.ts` … | Each method is about 15 lines. No business rules, no SQL. |
 | `services/` | `session.service.ts` … | Never imports from `controllers/` or HTTP helpers. Throws typed errors. |
-| `repositories/` | `session.repository.ts` … | The only place SQL is written. No business rules. |
+| `repositories/` | `session.repository.ts` … | The only place the database is queried, through the Drizzle query builder (`db.orm`, or `q.orm` inside `db.withTenant`). Raw `q.query()` only where the ORM can't express it, with a one-line comment saying why. No business rules. |
 | `models/` | `session.model.ts` … | Types and zod schemas only. |
 | `subscribers/` | `audit.subscriber.ts` … | React to events on the event bus (audit, usage). Services publish events; subscribers do the side effects. |
 | `middlewares/` | `auth.middleware.ts` … | Run before controllers. |
@@ -68,6 +68,7 @@ A file that plays a known role carries that role as a dot suffix, so the layer s
 |---|---|
 | controller / service / repository / model | `session.controller.ts`, `session.service.ts`, `session.repository.ts`, `session.model.ts` |
 | schema / subscriber / middleware / routes | `session.schema.ts`, `audit.subscriber.ts`, `auth.middleware.ts`, `session.routes.ts` |
+| table (Drizzle table definitions, `packages/store/src/tables/`) | `session.table.ts` |
 | helper / constants / config / job | `sse.helper.ts`, `limits.constants.ts`, `env.config.ts`, `maintenance.job.ts` |
 | tool / adapter / command | `read.tool.ts`, `anthropic.adapter.ts`, `login.command.ts` |
 | test | `session.service.test.ts` (in `__tests__/`) |
@@ -184,7 +185,9 @@ Keep classes focused. If a class has two groups of methods that never touch each
 
 ## 9. Layering (apps/server)
 
-See §0. In short: `controller → service → repository → model`, with dependencies pointing downward only. A controller method is about 15 lines; anything longer belongs in a service. SQL appears only in `repositories/`.
+See §0. In short: `controller → service → repository → model`, with dependencies pointing downward only. A controller method is about 15 lines; anything longer belongs in a service. Database access appears only in `repositories/`.
+
+**Database rules.** Schema changes are a new SQL migration in `schema.migrations.ts` plus the matching change in `packages/store/src/tables/` (the `tables.test.ts` mirror test fails otherwise). Use the portable `jsonb`/`bytea` column types from `@exa/store` — Drizzle's built-in `jsonb` double-encodes on Bun's driver. Avoid `orm.execute()`; its result shape differs between Bun SQL and PGlite.
 
 ## 10. Errors
 

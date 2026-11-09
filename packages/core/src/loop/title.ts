@@ -6,7 +6,8 @@ import type { LoopRuntime } from "./runtime.ts";
 
 // ---------- constants ----------
 const TITLE_AGENT = "title";
-const TITLE_MAX_TOKENS = 40;
+/** Headroom for reasoning models, which think before answering; the title is cut to one line. */
+const TITLE_MAX_TOKENS = 512;
 const FIRST_MESSAGE_MAX_CHARS = 4000;
 const TITLE_MAX_CHARS = 80;
 /** Leading quotes/hashes and trailing quotes/periods the model tends to add. */

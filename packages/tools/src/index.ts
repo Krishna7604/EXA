@@ -11,11 +11,14 @@ import { editTool } from "./tools/fs/edit.tool.ts";
 import { listTool } from "./tools/fs/list.tool.ts";
 import { readTool } from "./tools/fs/read.tool.ts";
 import { writeTool } from "./tools/fs/write.tool.ts";
+import { memoryForgetTool, memorySaveTool } from "./tools/memory/memory.tool.ts";
+import { recallTool } from "./tools/memory/recall.tool.ts";
 import { applyPatchTool } from "./tools/patch/apply-patch.tool.ts";
 import { globTool } from "./tools/search/glob.tool.ts";
 import { grepTool } from "./tools/search/grep.tool.ts";
 import { bashTool } from "./tools/shell/bash.tool.ts";
 import { webfetchTool } from "./tools/web/webfetch.tool.ts";
+import { websearchTool } from "./tools/web/websearch.tool.ts";
 
 // ---------- shared constants + helpers ----------
 export * from "./constants/ignored-dirs.constants.ts";
@@ -36,6 +39,8 @@ export * from "./tools/fs/list.tool.ts";
 export * from "./tools/fs/read.tool.ts";
 export * from "./tools/fs/text-locate.ts";
 export * from "./tools/fs/write.tool.ts";
+export * from "./tools/memory/memory.tool.ts";
+export * from "./tools/memory/recall.tool.ts";
 export * from "./tools/patch/apply-patch.tool.ts";
 export * from "./tools/patch/patch-apply.ts";
 export * from "./tools/patch/patch-parse.ts";
@@ -46,7 +51,9 @@ export * from "./tools/shell/bash-asks.ts";
 export * from "./tools/shell/local-shell.ts";
 export * from "./tools/web/html-to-text.ts";
 export * from "./tools/web/network-guard.ts";
+export * from "./tools/web/search-providers.ts";
 export * from "./tools/web/webfetch.tool.ts";
+export * from "./tools/web/websearch.tool.ts";
 // ---------- workspace ----------
 export * from "./workspace/env-detect.ts";
 export * from "./workspace/frontmatter.ts";
@@ -63,6 +70,10 @@ export interface BuiltinToolOptions {
   question?: boolean;
   /** Filesystem tools (read/write/edit/apply_patch/list/glob/grep). Defaults to true. */
   files?: boolean;
+  /** memory_save / memory_forget / recall — only when the host provides a MemoryPort. */
+  memory?: boolean;
+  /** websearch — only when the host provides a SearchPort. */
+  search?: boolean;
 }
 
 /**
@@ -74,6 +85,8 @@ export function builtinTools(opts: BuiltinToolOptions = {}): ToolSpec[] {
   const tools: ToolSpec[] = opts.files === false ? [todoTool, skillTool] : fileTools();
   if (opts.shell !== false) tools.push(bashTool);
   if (opts.web !== false) tools.push(webfetchTool);
+  if (opts.search) tools.push(websearchTool);
+  if (opts.memory) tools.push(memorySaveTool, memoryForgetTool, recallTool);
   if (opts.question) tools.push(questionTool);
   return tools;
 }

@@ -1,7 +1,13 @@
 // Token / spend / request quotas per tenant or user, checked against the usage rollups that
 // TelemetryWriter maintains.
-import type { Db } from "@exa/store";
+import { type Db, type DbTx, quotas, usageRollups } from "@exa/store";
+import { and, eq, or, sql } from "drizzle-orm";
 import type { QuotaLimits, QuotaUsageRow } from "../models/quota.model.ts";
+
+// ---------- constants ----------
+/** The rollup period a quota row is measured against: today, or this month. */
+const CURRENT_PERIOD_START = sql`case ${quotas.period} when 'day' then current_date
+  else date_trunc('month', current_date)::date end`;
 
 // ---------- quotas repo ----------
 export class QuotasRepo {
@@ -9,37 +15,31 @@ export class QuotasRepo {
 
   async set(tenantId: string, q: QuotaLimits): Promise<void> {
     await this.db.withTenant(tenantId, (x) =>
-      x.query(
-        `insert into quotas (tenant_id, subject_scope, subject_id, period, max_tokens, max_cost_usd, max_requests) values ($1,$2,$3,$4,$5,$6,$7)
-         on conflict (tenant_id, subject_scope, subject_id, period) do update set max_tokens = excluded.max_tokens,
-           max_cost_usd = excluded.max_cost_usd, max_requests = excluded.max_requests`,
-        [
+      x.orm
+        .insert(quotas)
+        .values({
           tenantId,
-          q.subjectScope,
-          q.subjectId,
-          q.period,
-          q.maxTokens ?? null,
-          q.maxCostUsd ?? null,
-          q.maxRequests ?? null,
-        ],
-      ),
+          subjectScope: q.subjectScope,
+          subjectId: q.subjectId,
+          period: q.period,
+          maxTokens: q.maxTokens ?? null,
+          maxCostUsd: q.maxCostUsd ?? null,
+          maxRequests: q.maxRequests ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [quotas.tenantId, quotas.subjectScope, quotas.subjectId, quotas.period],
+          set: {
+            maxTokens: sql`excluded.max_tokens`,
+            maxCostUsd: sql`excluded.max_cost_usd`,
+            maxRequests: sql`excluded.max_requests`,
+          },
+        }),
     );
   }
 
   /** Null when within quota, else a human message. */
   async exceeded(tenantId: string, userId: string): Promise<string | null> {
-    const rows = await this.db.withTenant(tenantId, (q) =>
-      q.query<QuotaUsageRow>(
-        `select qt.subject_scope, qt.period, qt.max_tokens, qt.max_cost_usd, qt.max_requests,
-                coalesce(r.tokens, 0) as tokens, coalesce(r.cost_usd, 0) as cost, coalesce(r.requests, 0) as requests
-         from quotas qt
-         left join usage_rollups r on r.tenant_id = qt.tenant_id and r.subject_scope = qt.subject_scope and r.subject_id = qt.subject_id
-           and r.period = qt.period
-           and r.period_start = case qt.period when 'day' then current_date else date_trunc('month', current_date)::date end
-         where (qt.subject_scope = 'tenant' and qt.subject_id = $1) or (qt.subject_scope = 'user' and qt.subject_id = $2)`,
-        [tenantId, userId],
-      ),
-    );
+    const rows = await this.db.withTenant(tenantId, (q) => quotaUsage(q, tenantId, userId));
     for (const r of rows) {
       const message = exceededMessage(r);
       if (message) return message;
@@ -49,6 +49,39 @@ export class QuotasRepo {
 }
 
 // ---------- helpers ----------
+/** The tenant's and the user's quotas, each joined with its current-period usage. */
+async function quotaUsage(q: DbTx, tenantId: string, userId: string): Promise<QuotaUsageRow[]> {
+  const rows = await q.orm
+    .select({
+      subject_scope: quotas.subjectScope,
+      period: quotas.period,
+      max_tokens: quotas.maxTokens,
+      max_cost_usd: quotas.maxCostUsd,
+      max_requests: quotas.maxRequests,
+      tokens: sql`coalesce(${usageRollups.tokens}, 0)`,
+      cost: sql`coalesce(${usageRollups.costUsd}, 0)`,
+      requests: sql`coalesce(${usageRollups.requests}, 0)`,
+    })
+    .from(quotas)
+    .leftJoin(
+      usageRollups,
+      and(
+        eq(usageRollups.tenantId, quotas.tenantId),
+        eq(usageRollups.subjectScope, quotas.subjectScope),
+        eq(usageRollups.subjectId, quotas.subjectId),
+        eq(usageRollups.period, quotas.period),
+        eq(usageRollups.periodStart, CURRENT_PERIOD_START),
+      ),
+    )
+    .where(
+      or(
+        and(eq(quotas.subjectScope, "tenant"), eq(quotas.subjectId, tenantId)),
+        and(eq(quotas.subjectScope, "user"), eq(quotas.subjectId, userId)),
+      ),
+    );
+  return rows as QuotaUsageRow[];
+}
+
 function exceededMessage(r: QuotaUsageRow): string | null {
   const who = r.subject_scope === "tenant" ? "Organization" : "Your";
   if (isAtLimit(r.tokens, r.max_tokens)) return `${who} ${r.period}ly token quota is used up`;

@@ -10,11 +10,13 @@ import {
   type ApprovalPort,
   agentFromSpec,
   builtinRules,
+  DEFAULT_AGENT,
   EventBus,
   HookRunner,
   MemoryStore,
   type ModelPort,
   type PromptResult,
+  type SearchPort,
   type SessionStore,
   secretScrubHook,
   TeeSink,
@@ -53,6 +55,7 @@ import {
 } from "@exa/tools";
 import { EXA_HOME } from "../config/exa-home.config.ts";
 import { loadMcpServers } from "../config/mcp.config.ts";
+import { searchFromEnv } from "../config/search.config.ts";
 import { combineInstructions, mergeSkills, type OrgSkill } from "../helpers/loop-ports.helper.ts";
 import type { Credentials } from "../models/config.model.ts";
 import type { Interaction } from "../models/interaction.model.ts";
@@ -61,10 +64,10 @@ import { EventForwarder } from "../sync/event-forwarder.ts";
 import { LeaseKeeper } from "../sync/lease-keeper.ts";
 import { MirrorStore } from "../sync/mirror-store.ts";
 import { remoteAuthorizer } from "../sync/remote-authorizer.ts";
+import { remoteMemory } from "../sync/remote-memory.ts";
 import { verifyPolicy } from "../sync/verify-policy.ts";
 
 // ---------- constants ----------
-const DEFAULT_AGENT = "build";
 const DEFAULT_MODEL = "exa";
 const LEASE_TTL_MS = 60_000;
 /** Warn once, after this many consecutive sync failures. */
@@ -121,6 +124,7 @@ export class ExaClient {
   private current: AbortController | null = null;
   private mcp: McpManager | null = null;
   private mcpTools: ToolSpec[] = [];
+  private search: SearchPort | null = null;
   private orgSkills: OrgSkill[] = [];
 
   constructor(
@@ -140,6 +144,7 @@ export class ExaClient {
     if (this.api && this.creds) await this.startServerSession(this.api, this.creds, env);
     else await this.startLocalSession(env);
     await this.startMcp(env.root);
+    this.startSearch();
     this.root = env.root;
     await this.loadDefinitions(env.root);
     this.loop = this.buildLoop(env, this.makeModel());
@@ -363,6 +368,13 @@ export class ExaClient {
     }
   }
 
+  /** Web search from env keys (keyless fallback otherwise); a bad config only warns. */
+  private startSearch(): void {
+    const { search, error } = searchFromEnv(this.opts.env ?? process.env);
+    this.search = search;
+    if (error) this.io.notice(`web search disabled: ${error}`);
+  }
+
   /** Agents, skills and custom commands; local definitions win over the org's on name clashes. */
   private async loadDefinitions(root: string): Promise<void> {
     if (this.api) await this.loadOrgDefinitions(this.api);
@@ -398,12 +410,17 @@ export class ExaClient {
     const isUnsafeRoot = env.root === homedir() || env.root === "/";
     const sinks = this.forwarder ? new TeeSink([this.bus, this.forwarder]) : this.bus;
     const skills = mergeSkills(new LocalSkills(env.root), this.orgSkills);
+    // logged in: the user's server-side memory; --local has none
+    const memory = this.api ? remoteMemory(this.api) : undefined;
+    const tools = builtinTools({ question: true, search: !!this.search, memory: !!memory });
     return new AgentLoop({
       model,
       store: this.store,
       events: sinks,
-      tools: new ToolRegistry([...builtinTools({ question: true }), ...this.mcpTools]),
+      tools: new ToolRegistry([...tools, ...this.mcpTools]),
       agents: this.agents,
+      search: this.search ?? undefined,
+      memory,
       permissions: this.permissionsConfig(),
       env: () => env,
       hooks: new HookRunner([secretScrubHook]),

@@ -3,12 +3,15 @@
 // gateway) — only these implementations differ.
 
 import type {
+  ChatSearchHit,
   ExaEvent,
+  MemoryItem,
   MessageInfo,
   MessageWithParts,
   ModelChunk,
   ModelRequest,
   Part,
+  SearchResult,
   SessionInfo,
 } from "@exa/protocol";
 
@@ -66,4 +69,27 @@ export interface EnvInfo {
   isGitRepo: boolean;
   gitBranch?: string;
   host: "client" | "server";
+}
+
+/** The user's long-term memory. Hosts without one simply don't provide it. */
+export interface MemoryPort {
+  /** Memories shown to the model at the start of each turn (most recently updated first). */
+  list(limit: number): Promise<MemoryItem[]>;
+  /** Create a memory, or replace the one with `id`. */
+  save(input: {
+    id?: string;
+    topic: string;
+    content: string;
+    sessionId?: string;
+  }): Promise<MemoryItem>;
+  forget(id: string): Promise<boolean>;
+  search(query: string, limit: number): Promise<MemoryItem[]>;
+  /** Full-text search over the user's stored chats; absent when chats aren't stored. */
+  searchChats?(query: string, limit: number): Promise<ChatSearchHit[]>;
+}
+
+/** Web search behind the `websearch` tool (Tavily, Brave, SearXNG, …). */
+export interface SearchPort {
+  readonly provider: string;
+  search(query: string, opts: { limit: number; signal: AbortSignal }): Promise<SearchResult[]>;
 }

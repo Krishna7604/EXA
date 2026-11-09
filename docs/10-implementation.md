@@ -52,10 +52,11 @@ Loop behaviour:
 
 ## 4. Data (Postgres)
 
-- **Migrations:** `packages/store/src/migrations/schema.migrations.ts`.
+- **Access:** repositories use the **Drizzle ORM** (0.45). `db.orm` runs as the owner (system queries); inside `db.withTenant(tenant, (q) => …)` the handle `q.orm` is bound to that transaction, so ORM queries run under RLS as `exa_app`. Drizzle tables live in `packages/store/src/tables/` and are checked against the migrated schema by `tables.test.ts`. Custom `jsonb`/`bytea` column types keep Bun SQL and PGlite identical (Drizzle's own `jsonb` double-encodes on Bun SQL).
+- **Migrations:** `packages/store/src/migrations/schema.migrations.ts` (hand-written SQL: RLS policies and partitions are beyond an ORM's migration generator). `003_personal_agent` adds `memories` (generated tsvector + GIN), `scheduled_tasks`, `task_runs`, `sessions.task_id`, connector timestamps and a GIN index for chat search over stored text parts.
 - **Global tables:** tenants, users, memberships, api_tokens (hashed), device_codes, model_backends.
 - **Tenant tables:** every tenant table has RLS keyed on `exa.tenant_id`, enforced by switching to the `exa_app` role with `SET LOCAL ROLE`.
-- **Content tables:** `messages`/`parts` exist only for sessions with `storage_mode='server'`. Retention is per org (`retention.contentDays`) and run by the maintenance job.
+- **Content tables:** `messages`/`parts` exist for sessions with `storage_mode='server'`, which is now the default for every session (web and CLI). Content is kept forever unless an org sets `retention.contentDays`; the maintenance job enforces it.
 - **High-volume tables:** `usage_events` and `audit_log` are append-only and partitioned by month. Old months are dropped as whole partitions. `usage_rollups` back the quota checks.
 - **Driver portability:** JSON and array parameters are always sent as text and cast in SQL, so Bun's Postgres driver and PGlite behave the same way. Both are tested.
 
@@ -92,6 +93,10 @@ Loop behaviour:
 - **`webfetch`:** it resolves DNS and re-checks every redirect hop against private/link-local/CGNAT ranges. DNS-rebinding between the check and the connect is not covered; put an egress proxy in front of production sandboxes.
 - **Rate limits:** API calls are limited to 600/min per user. Live sync (ingest, SSE, model stream, authorize) has its own budget of 6000/min.
 - **Open:**
-  - **Web UI:** a real-browser pass, plus diff view and syntax highlighting.
-  - **Usage UI:** charts for usage per org.
-  - **MCP via the server:** an API for server-side MCP servers (the `mcp_servers` table is there).
+  - **Notifications:** scheduled-task results are only in the app (no email/push/webhook yet).
+  - **Connectors:** static headers only; remote MCP OAuth (dynamic client registration) is next.
+  - **Web UI:** diff view and syntax highlighting; usage charts.
+
+## 8. Personal agent (2026-11-06)
+
+See [`docs/13`](13-personal-agent.md). In short: the `assistant` agent is the default; the server runtime gives every web chat the user's memory (`memoryFor`), web search (`search`) and connectors (`connectorsFor`); `runtime.run()` lets the scheduler run a prompt to completion; scheduled sessions (`taskId` set) get an approval port that denies instead of waiting. The web app was rebuilt (Iris design, still no build step) and checked in headless Chrome against a live server: sign-in, chat with memory + web search + approvals, chat search, tasks, memory, tools, settings, dark mode and a phone-width layout.

@@ -7,6 +7,7 @@
 import {
   addTokens,
   type FinishReason,
+  type MemoryItem,
   type MessageInfo,
   type MessageWithParts,
   type ModelRequest,
@@ -41,6 +42,8 @@ const MAX_STEPS_PROMPT =
   "You have reached the maximum number of steps for this turn. Do not call any tools. Reply with a concise summary of what you accomplished, what remains, and the exact next steps.";
 const STREAM_FAILED_MESSAGE = "Not executed: the model stream failed.";
 const SKILL_TOOL = "skill";
+/** How many memories go into the system prompt (the block is also capped by size). */
+const MEMORY_PROMPT_LIMIT = 60;
 const NO_TOOL_OUTCOME: ToolCallOutcome = { rejected: false, mutated: false };
 
 // ---------- types ----------
@@ -64,6 +67,8 @@ interface RunSetup {
   env: EnvInfo;
   instructions: Array<{ source: string; content: string }>;
   skills: SkillInfo[];
+  /** Undefined when the host has no long-term memory. */
+  memories?: MemoryItem[];
   maxSteps: number;
   depth: number;
 }
@@ -184,12 +189,13 @@ class StepRunner {
   /** System prompt sections, after the `chat.system` hook had its say. */
   private async buildSystemPrompt(tools: StepTools): Promise<string> {
     const { session, agent } = this.ctx;
-    const { env, model, instructions, skills } = this.setup;
+    const { env, model, instructions, skills, memories } = this.setup;
     const system = buildSystem({
       agent,
       env,
       model,
       instructions,
+      memories,
       skills: tools.allowed.has(SKILL_TOOL) ? skills : [],
       subagents: this.rt.deps.agents.subagents(),
       extra: tools.deferredNote ? [tools.deferredNote] : undefined,
@@ -349,12 +355,24 @@ async function prepareRun(rt: LoopRuntime, ctx: RunContext): Promise<RunSetup> {
   const { session, agent, input } = ctx;
   const { model, tier } = rt.resolveModel(session, agent, input.model);
   const env = await rt.deps.env();
-  const [instructions, skills] = await Promise.all([
+  const [instructions, skills, memories] = await Promise.all([
     rt.deps.instructions?.load() ?? [],
     rt.deps.skills?.list() ?? [],
+    loadMemories(rt),
   ]);
   const maxSteps = agent.steps ?? rt.cfg.maxSteps;
-  return { model, tier, env, instructions, skills, maxSteps, depth: input.depth ?? 0 };
+  return { model, tier, env, instructions, skills, memories, maxSteps, depth: input.depth ?? 0 };
+}
+
+/** Memories for the system prompt. A memory outage costs the turn its memory, not the turn. */
+async function loadMemories(rt: LoopRuntime): Promise<MemoryItem[] | undefined> {
+  if (!rt.deps.memory) return undefined;
+  try {
+    return await rt.deps.memory.list(MEMORY_PROMPT_LIMIT);
+  } catch {
+    // reported by the host's own logging; the turn goes on without memories
+    return [];
+  }
 }
 
 function finishReason(reply: StreamedReply, isAborted: boolean): FinishReason {

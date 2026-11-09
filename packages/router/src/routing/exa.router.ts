@@ -19,10 +19,15 @@ const TIER_FALLBACK: Record<Tier, Tier[]> = {
 /** Leave headroom in each backend's context window for the reply. */
 const CONTEXT_HEADROOM = 0.9;
 /** How much of each backend's error goes into the combined "all failed" message. */
-const ERROR_SNIPPET_CHARS = 200;
+const ERROR_SNIPPET_CHARS = 400;
 const UNAVAILABLE_STATUS = 503;
 
 // ---------- types ----------
+interface BackendFailure {
+  id: string;
+  message: string;
+}
+
 export interface ExaRouterOpts {
   backends?: Backend[];
   credential: (provider: string) => Credential | null;
@@ -106,7 +111,7 @@ export class ExaRouter {
     const tier = classify(req, explicitTier);
     const list = this.candidates(req, tier);
     if (!list.length) throw noBackendError(tier, req);
-    const errors: string[] = [];
+    const errors: BackendFailure[] = [];
     for (const b of list) {
       if (signal.aborted) return;
       const cred = this.opts.credential(b.provider) as Credential;
@@ -118,17 +123,13 @@ export class ExaRouter {
         if (signal.aborted) return;
         const err = toModelError(e);
         this.health.recordFailure(b.id);
-        errors.push(`${b.id}: ${err.message.slice(0, ERROR_SNIPPET_CHARS)}`);
+        errors.push({ id: b.id, message: err.message.slice(0, ERROR_SNIPPET_CHARS) });
         // Once output streamed, we can't transparently switch backends.
         if (attempt.produced) throw err;
         // Auth/validation errors on one backend don't imply the next will fail; keep going.
       }
     }
-    throw new ModelError(
-      `exa: all backends failed for tier "${tier}": ${errors.join(" | ")}`,
-      UNAVAILABLE_STATUS,
-      true,
-    );
+    throw new ModelError(allFailedMessage(tier, errors), UNAVAILABLE_STATUS, true);
   }
 
   /** Healthy first, then lower priority number, then faster. */
@@ -160,6 +161,14 @@ export class ExaRouter {
 // ---------- helpers ----------
 function enabledOnly(backends: Backend[]): Backend[] {
   return backends.filter((b) => b.enabled !== false);
+}
+
+/** One line per distinct error: backends sharing a provider key usually fail the same way. */
+function allFailedMessage(tier: string, errors: BackendFailure[]): string {
+  const distinct = new Set(errors.map((e) => e.message));
+  if (distinct.size === 1)
+    return `exa: no model for tier "${tier}" could answer: ${errors[0].message}`;
+  return `exa: all backends failed for tier "${tier}": ${errors.map((e) => `${e.id}: ${e.message}`).join(" | ")}`;
 }
 
 function toModelError(e: unknown): ModelError {

@@ -2,6 +2,7 @@
 
 import type {
   ContentBlock,
+  MemoryItem,
   MessageWithParts,
   ModelMessage,
   Part,
@@ -15,6 +16,10 @@ import type { EnvInfo, SkillInfo } from "../models/ports.model.ts";
 const SKILLS_INTRO =
   "Skills provide specialized instructions loaded on demand. When a task matches a skill's description, call the skill tool with its name before starting.";
 const SUMMARY_PREFIX = "Summary of the conversation so far:\n";
+const MEMORY_INTRO =
+  "What you remember about the user from earlier conversations, newest first. Use it when it helps; don't recite it unprompted. When you learn a lasting fact or preference, or one of these changes, save it with memory_save (pass the id to update one); forget it with memory_forget when the user asks or it turns out wrong.";
+/** Memory block cap, so a large memory never crowds out the conversation. */
+const MAX_MEMORY_PROMPT_CHARS = 6000;
 const INTERRUPTED_TOOL_OUTPUT = "Tool execution was interrupted.";
 /** Rough average for English text and code. */
 const CHARS_PER_TOKEN = 4;
@@ -32,12 +37,15 @@ export function buildSystem(opts: {
   instructions: Array<{ source: string; content: string }>;
   skills: SkillInfo[];
   subagents: AgentDef[];
+  /** Long-term memories; `undefined` when the host has no memory. */
+  memories?: MemoryItem[];
   extra?: string[];
 }): string[] {
   const out: string[] = [opts.agent.prompt, envSection(opts.env, opts.model)];
   for (const ins of opts.instructions) {
     out.push(`Instructions from ${ins.source}:\n${ins.content.trim()}`);
   }
+  if (opts.memories) out.push(memorySection(opts.memories));
   if (opts.skills.length) out.push(skillsSection(opts.skills));
   if (opts.extra) out.push(...opts.extra);
   return out;
@@ -90,6 +98,19 @@ function envSection(env: EnvInfo, model: string): string {
     `Tools run on: ${host}`,
     "</env>",
   ].join("\n");
+}
+
+function memorySection(memories: MemoryItem[]): string {
+  const lines: string[] = [];
+  let used = 0;
+  for (const m of memories) {
+    const line = `- [${m.id}] ${m.topic}: ${m.content.replace(/\s+/g, " ")}`;
+    used += line.length;
+    if (used > MAX_MEMORY_PROMPT_CHARS) break;
+    lines.push(line);
+  }
+  const body = lines.length ? lines.join("\n") : "(nothing saved yet)";
+  return `<memory>\n${MEMORY_INTRO}\n${body}\n</memory>`;
 }
 
 function skillsSection(skills: SkillInfo[]): string {

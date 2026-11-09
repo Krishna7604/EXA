@@ -203,9 +203,20 @@ describe("auth", () => {
 });
 
 describe("server loop (light client)", () => {
-  test("prompt streams over SSE; storage none keeps zero content rows", async () => {
+  test("new sessions store their content on the server by default", async () => {
     const a = await login("alice@acme.dev", "acme");
     const created = await j("POST", "/v1/sessions", a.token, { loopHost: "server" });
+    expect(created.status).toBe(201);
+    expect(created.body.storageMode).toBe("server");
+    expect(created.body.agent).toBe("assistant");
+  });
+
+  test("prompt streams over SSE; storage none keeps zero content rows", async () => {
+    const a = await login("alice@acme.dev", "acme");
+    const created = await j("POST", "/v1/sessions", a.token, {
+      loopHost: "server",
+      storageMode: "none",
+    });
     expect(created.status).toBe(201);
     expect(created.body.storageMode).toBe("none");
     const sid = created.body.id;

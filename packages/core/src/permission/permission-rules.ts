@@ -99,6 +99,8 @@ export function builtinRules(): PermissionRule[] {
     r("question", "*", "allow"),
     r("task", "*", "allow"),
     r("websearch", "*", "allow"),
+    r("memory", "*", "allow"),
+    r("recall", "*", "allow"),
     r("webfetch", "*", "ask"),
     r("edit", "*", "ask"),
     r("bash", "*", "ask"),

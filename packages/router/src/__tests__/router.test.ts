@@ -134,6 +134,44 @@ describe("openai-compatible adapter", () => {
     });
   });
 
+  test("low credits (402 'can only afford N') retries once with a budget that fits", async () => {
+    const budgets: number[] = [];
+    const lowCredit = JSON.stringify({
+      error: {
+        message:
+          "This request requires more credits, or fewer max_tokens. You requested up to 8192 tokens, but can only afford 1366.",
+        code: 402,
+      },
+    });
+    const fetchFn = async (_u: any, init?: RequestInit) => {
+      const max = JSON.parse(String(init!.body)).max_tokens;
+      budgets.push(max);
+      if (max > 1366) return new Response(lowCredit, { status: 402 });
+      return sse([{ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }, "[DONE]"]);
+    };
+    const opts = { model: "m", baseURL: "https://x", signal: new AbortController().signal };
+    const out = await collect(
+      streamOpenAI(
+        { ...req, maxTokens: 8192 },
+        { ...opts, fetch: fetchFn, providerId: "openrouter" },
+      ),
+    );
+    expect(budgets).toEqual([8192, 1229]);
+    expect(out.some((c) => c.type === "text-delta" && c.text === "ok")).toBe(true);
+  });
+
+  test("errors carry the provider's message, not its raw JSON", async () => {
+    const body = JSON.stringify({ error: { message: "can only afford 100", code: 402 } });
+    const fetchFn = async () => new Response(body, { status: 402 });
+    const opts = { model: "m", baseURL: "https://x", signal: new AbortController().signal };
+    const run = collect(streamOpenAI(req, { ...opts, fetch: fetchFn, providerId: "openrouter" }));
+    // 100 tokens is too small to retry with, so the error surfaces, readable
+    await expect(run).rejects.toMatchObject({
+      status: 402,
+      message: "openrouter 402: can only afford 100",
+    });
+  });
+
   test("no tools → tool blocks flattened to text", async () => {
     let body: any;
     const fetchFn = async (_u: any, init?: RequestInit) => {
@@ -412,6 +450,19 @@ describe("exa orchestrator", () => {
     expect(classify(m("add a flag to the cli", true))).toBe("balanced");
     expect(classify(m("debug this race condition in the scheduler", true))).toBe("strong");
     expect(classify(m("hi"), "strong")).toBe("strong");
+  });
+
+  test("backends failing the same way are reported once", async () => {
+    const fetchFn = async () =>
+      new Response('{"error":{"message":"out of credits"}}', { status: 402 });
+    // the dev setup: several backends on one OpenRouter key
+    const sameKey = backends.slice(0, 2).map((b) => ({ ...b, provider: "openrouter" }));
+    const r = new ExaRouter({ backends: sameKey, credential: cred, fetch: fetchFn });
+    const run = collect(r.stream(req, new AbortController().signal, "balanced"));
+    const err = await run.catch((e: Error) => e);
+    expect((err as Error).message).toBe(
+      'exa: no model for tier "balanced" could answer: openrouter 402: out of credits',
+    );
   });
 
   test("filters by tool support + credentials, falls back on failure, opens circuit", async () => {

@@ -2,6 +2,7 @@
 
 // ---------- storage ----------
 export const TOKEN_KEY = "exa.token";
+export const THEME_KEY = "exa.theme";
 
 export const store = {
   get(k) {
@@ -17,7 +18,7 @@ export const store = {
       if (v === null) localStorage.removeItem(k);
       else localStorage.setItem(k, v);
     } catch {
-      // storage unavailable: the token just won't survive a reload
+      // storage unavailable: the value just won't survive a reload
     }
   },
 };

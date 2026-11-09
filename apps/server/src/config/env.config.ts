@@ -14,6 +14,8 @@ const MIN_JWT_SECRET_CHARS = 32;
 const DEFAULT_SANDBOX_IMAGE = "oven/bun:1-debian";
 const DEFAULT_OIDC_AUDIENCE = "exa";
 const DEFAULT_IDLE_RUNTIME_MS = 30 * 60_000;
+const DEFAULT_SCHEDULER_TICK_MS = 30_000;
+const DEFAULT_SCHEDULER_CONCURRENCY = 2;
 
 /** Provider env vars the platform pool picks up (each may be overridden as EXA_POOL_<NAME>). */
 const POOL_VARS = [
@@ -63,6 +65,21 @@ export interface ServerConfig {
   maxBodyBytes: number;
   approvalTimeoutMs: number;
   idleRuntimeMs: number;
+  /** Web search for the `websearch` tool. The first configured provider wins. */
+  search: SearchConfig;
+  /** Scheduled tasks: how often the server looks for due tasks, and how many run at once. */
+  scheduler: { enabled: boolean; tickMs: number; concurrency: number };
+  /** Connectors may reach private/loopback addresses only when this is set (self-hosted MCP). */
+  connectorsAllowPrivate: boolean;
+}
+
+/** Web search credentials; none set → `websearch` falls back to a keyless provider. */
+export interface SearchConfig {
+  /** Force one provider: "tavily" | "brave" | "searxng" | "duckduckgo" | "off". */
+  provider?: string;
+  tavilyKey?: string;
+  braveKey?: string;
+  searxngUrl?: string;
 }
 
 // ---------- load config ----------
@@ -91,6 +108,9 @@ export function loadConfig(env: Env = process.env): ServerConfig {
     maxBodyBytes: Number(env.EXA_MAX_BODY_BYTES ?? DEFAULT_MAX_BODY_BYTES),
     approvalTimeoutMs: Number(env.EXA_APPROVAL_TIMEOUT_MS ?? DEFAULT_APPROVAL_TIMEOUT_MS),
     idleRuntimeMs: Number(env.EXA_IDLE_RUNTIME_MS ?? DEFAULT_IDLE_RUNTIME_MS),
+    search: searchFrom(env),
+    scheduler: schedulerFrom(env),
+    connectorsAllowPrivate: env.EXA_CONNECTORS_ALLOW_PRIVATE === "1",
   };
 }
 
@@ -142,5 +162,23 @@ function oidcFrom(env: Env): ServerConfig["oidc"] {
     audience: env.EXA_OIDC_AUDIENCE ?? DEFAULT_OIDC_AUDIENCE,
     tenantClaim: env.EXA_OIDC_TENANT_CLAIM,
     defaultTenant: env.EXA_OIDC_DEFAULT_TENANT,
+  };
+}
+
+function searchFrom(env: Env): SearchConfig {
+  return {
+    provider: env.EXA_SEARCH_PROVIDER || undefined,
+    tavilyKey: env.TAVILY_API_KEY || undefined,
+    braveKey: env.BRAVE_SEARCH_API_KEY || undefined,
+    searxngUrl: env.EXA_SEARXNG_URL || undefined,
+  };
+}
+
+/** EXA_SCHEDULER=0 turns scheduled tasks off on this node (e.g. all but one replica). */
+function schedulerFrom(env: Env): ServerConfig["scheduler"] {
+  return {
+    enabled: env.EXA_SCHEDULER !== "0",
+    tickMs: Number(env.EXA_SCHEDULER_TICK_MS ?? DEFAULT_SCHEDULER_TICK_MS),
+    concurrency: Number(env.EXA_SCHEDULER_CONCURRENCY ?? DEFAULT_SCHEDULER_CONCURRENCY),
   };
 }

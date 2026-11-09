@@ -130,7 +130,13 @@ async function buildToolContext(
     signal: ctx.signal,
     outputDir: rt.deps.outputDir,
     depth: ctx.depth,
-    services: { ...rt.deps.services, session: ctx.session, loop: ctx.loop },
+    services: {
+      ...rt.deps.services,
+      memory: rt.deps.memory,
+      search: rt.deps.search,
+      session: ctx.session,
+      loop: ctx.loop,
+    },
     update: (u) => {
       if (part.state.status !== "running") return;
       if (u.title) part.state.title = u.title;

@@ -1,0 +1,150 @@
+/* Iris design tokens: color, type, spacing, radius and motion. Light is the default; the dark
+   twin applies with the OS preference (unless the user picked light) or when chosen explicitly.
+   Color carries meaning only: iris = act / you, marigold = needs you, fern = done, rose = failed. */
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/fonts/geist-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/fonts/geist-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/fonts/geist-mono-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+:root {
+  /* surfaces */
+  --bg: #f4f5f9; /* porcelain */
+  --surface: #ffffff; /* paper */
+  --surface-2: #eceef4; /* hover / inset */
+  --surface-3: #e3e5ee;
+  --line: #e1e3ec;
+  --line-strong: #cdd0dc;
+  /* text */
+  --ink: #171a2c;
+  --ink-2: #4f546b;
+  --ink-3: #7d8299;
+  /* meaning */
+  --iris: #5753c6;
+  --iris-strong: #4743b0;
+  --iris-ink: #ffffff;
+  --iris-wash: #ecebfa;
+  --iris-line: #cfcdf3;
+  --marigold: #e3a23b;
+  --marigold-ink: #7a4d07;
+  --marigold-wash: #fcf2df;
+  --fern: #2f8f67;
+  --fern-wash: #e3f3eb;
+  --rose: #c8414a;
+  --rose-wash: #fbe7e8;
+  /* code */
+  --code-bg: #f0f1f7;
+  --code-ink: #2a2e48;
+  /* elevation: one shadow, used by floating things only (dock, menus, toasts) */
+  --shadow-float: 0 1px 2px rgba(23, 26, 44, 0.06), 0 12px 32px -8px rgba(23, 26, 44, 0.16);
+  --focus: 0 0 0 3px color-mix(in srgb, var(--iris) 28%, transparent);
+
+  /* type (≈1.2 scale on a 15px base) */
+  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 21px;
+  --fs-2xl: 30px;
+  --lh: 1.55;
+
+  /* spacing (4px grid) and radius (small controls → cards → the dock) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 18px;
+  --r-pill: 999px;
+
+  --rail-w: 68px;
+  --panel-w: 288px;
+  --read-w: 760px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14152a;
+    --surface: #1b1d35;
+    --surface-2: #23264a;
+    --surface-3: #2b2e55;
+    --line: #2a2d4d;
+    --line-strong: #3a3e66;
+    --ink: #ecedf7;
+    --ink-2: #b4b7d1;
+    --ink-3: #8689aa;
+    --iris: #8f8cf2;
+    --iris-strong: #a9a6f7;
+    --iris-ink: #14152a;
+    --iris-wash: #2a2a57;
+    --iris-line: #45437f;
+    --marigold: #f0b85a;
+    --marigold-ink: #f6cf8a;
+    --marigold-wash: #3a3022;
+    --fern: #5bc296;
+    --fern-wash: #1f3532;
+    --rose: #f07a80;
+    --rose-wash: #3d2233;
+    --code-bg: #111226;
+    --code-ink: #dcdcf2;
+    --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px -10px rgba(0, 0, 0, 0.55);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #14152a;
+  --surface: #1b1d35;
+  --surface-2: #23264a;
+  --surface-3: #2b2e55;
+  --line: #2a2d4d;
+  --line-strong: #3a3e66;
+  --ink: #ecedf7;
+  --ink-2: #b4b7d1;
+  --ink-3: #8689aa;
+  --iris: #8f8cf2;
+  --iris-strong: #a9a6f7;
+  --iris-ink: #14152a;
+  --iris-wash: #2a2a57;
+  --iris-line: #45437f;
+  --marigold: #f0b85a;
+  --marigold-ink: #f6cf8a;
+  --marigold-wash: #3a3022;
+  --fern: #5bc296;
+  --fern-wash: #1f3532;
+  --rose: #f07a80;
+  --rose-wash: #3d2233;
+  --code-bg: #111226;
+  --code-ink: #dcdcf2;
+  --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px -10px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}

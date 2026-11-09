@@ -1,6 +1,7 @@
 // Layered settings (tenant < project < user). A tenant can lock a key so lower scopes can't
 // override it.
-import type { Db } from "@exa/store";
+import { type Db, settings } from "@exa/store";
+import { and, eq, or, sql } from "drizzle-orm";
 import { NO_PROJECT_ID } from "../constants/ids.constants.ts";
 import { SCOPE_PRECEDENCE, SETTING_DEFAULTS } from "../constants/settings.constants.ts";
 import type {
@@ -17,13 +18,23 @@ export class SettingsRepo {
 
   async resolve(s: Subject): Promise<ResolvedSettings> {
     const rows = await this.db.withTenant(s.tenantId, (q) =>
-      q.query<SettingRow>(
-        `select scope, key, value, locked from settings
-         where (scope = 'tenant' and scope_id = $1) or (scope = 'user' and scope_id = $2) or (scope = 'project' and scope_id = $3)`,
-        [s.tenantId, s.userId, s.projectId ?? NO_PROJECT_ID],
-      ),
+      q.orm
+        .select({
+          scope: settings.scope,
+          key: settings.key,
+          value: settings.value,
+          locked: settings.locked,
+        })
+        .from(settings)
+        .where(
+          or(
+            and(eq(settings.scope, "tenant"), eq(settings.scopeId, s.tenantId)),
+            and(eq(settings.scope, "user"), eq(settings.scopeId, s.userId)),
+            and(eq(settings.scope, "project"), eq(settings.scopeId, s.projectId ?? NO_PROJECT_ID)),
+          ),
+        ),
     );
-    return layerSettings(rows);
+    return layerSettings(rows as SettingRow[]);
   }
 
   /** Throws if a higher scope locked the key. */
@@ -35,30 +46,42 @@ export class SettingsRepo {
     const { scope, scopeId, key, value } = target;
     if (scope !== "tenant") await this.assertNotLocked(s, target);
     await this.db.withTenant(s.tenantId, (q) =>
-      q.query(
-        `insert into settings (tenant_id, scope, scope_id, key, value, locked, updated_by) values ($1,$2,$3,$4,($5::text)::jsonb,$6,$7)
-         on conflict (tenant_id, scope, scope_id, key) do update set value = excluded.value, locked = excluded.locked,
-           updated_by = excluded.updated_by, updated_at = now()`,
-        [
-          s.tenantId,
+      q.orm
+        .insert(settings)
+        .values({
+          tenantId: s.tenantId,
           scope,
           scopeId,
           key,
-          JSON.stringify(value),
-          (opts.locked ?? false) && scope === "tenant",
-          opts.by ?? null,
-        ],
-      ),
+          // Encoded here, not by the column, so a JSON null is stored as jsonb 'null'
+          // (the column encoder would write SQL NULL into this NOT NULL column).
+          value: sql`(${JSON.stringify(value)}::text)::jsonb`,
+          locked: (opts.locked ?? false) && scope === "tenant",
+          updatedBy: opts.by ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [settings.tenantId, settings.scope, settings.scopeId, settings.key],
+          set: {
+            value: sql`excluded.value`,
+            locked: sql`excluded.locked`,
+            updatedBy: sql`excluded.updated_by`,
+            updatedAt: sql`now()`,
+          },
+        }),
     );
   }
 
   async delete(s: Subject, target: SettingTarget): Promise<void> {
     await this.db.withTenant(s.tenantId, (q) =>
-      q.query(`delete from settings where scope = $1 and scope_id = $2 and key = $3`, [
-        target.scope,
-        target.scopeId,
-        target.key,
-      ]),
+      q.orm
+        .delete(settings)
+        .where(
+          and(
+            eq(settings.scope, target.scope),
+            eq(settings.scopeId, target.scopeId),
+            eq(settings.key, target.key),
+          ),
+        ),
     );
   }
 

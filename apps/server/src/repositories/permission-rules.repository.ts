@@ -1,9 +1,15 @@
 // Permission rules stored per scope (tenant / project / user); only tenant rules can be locked.
 import { newId, type PermissionRule, type RuleScope } from "@exa/protocol";
-import type { Db } from "@exa/store";
+import { type Db, permissionRules } from "@exa/store";
+import { and, eq, inArray, ne, or, type SQL, sql } from "drizzle-orm";
 import { NO_PROJECT_ID } from "../constants/ids.constants.ts";
 import type { NewRule } from "../models/permission-rule.model.ts";
 import type { SettingScope, Subject } from "../models/subject.model.ts";
+
+// ---------- constants ----------
+/** Precedence: tenant < project < user. */
+const SCOPE_ORDER = sql`case ${permissionRules.scope}
+  when 'tenant' then 0 when 'project' then 1 else 2 end`;
 
 // ---------- rules repo ----------
 export class PermissionRulesRepo {
@@ -12,18 +18,22 @@ export class PermissionRulesRepo {
   /** Rules in precedence order: tenant < project < user (then priority, then age). */
   async list(s: Subject): Promise<PermissionRule[]> {
     const rows = await this.db.withTenant(s.tenantId, (q) =>
-      q.query<any>(
-        `select * from permission_rules
-         where (scope = 'tenant' and scope_id = $1) or (scope = 'user' and scope_id = $2) or (scope = 'project' and scope_id = $3)
-         order by case scope when 'tenant' then 0 when 'project' then 1 else 2 end, priority, created_at, id`,
-        [s.tenantId, s.userId, s.projectId ?? NO_PROJECT_ID],
-      ),
+      q.orm
+        .select()
+        .from(permissionRules)
+        .where(visibleTo(s))
+        .orderBy(
+          SCOPE_ORDER,
+          permissionRules.priority,
+          permissionRules.createdAt,
+          permissionRules.id,
+        ),
     );
     return rows.map((r) => ({
       id: r.id,
       permission: r.permission,
       pattern: r.pattern,
-      action: r.action,
+      action: r.action as PermissionRule["action"],
       scope: r.scope as RuleScope,
       // only tenant rules can be locked
       locked: r.scope === "tenant" && r.locked,
@@ -33,33 +43,48 @@ export class PermissionRulesRepo {
   async add(s: Subject, r: NewRule, by?: string): Promise<string> {
     const id = newId();
     await this.db.withTenant(s.tenantId, (q) =>
-      q.query(
-        `insert into permission_rules (id, tenant_id, scope, scope_id, permission, pattern, action, locked, priority, created_by)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [
-          id,
-          s.tenantId,
-          r.scope,
-          r.scopeId,
-          r.permission,
-          r.pattern,
-          r.action,
-          !!r.locked && r.scope === "tenant",
-          r.priority ?? 0,
-          by ?? null,
-        ],
-      ),
+      q.orm.insert(permissionRules).values({
+        id,
+        tenantId: s.tenantId,
+        scope: r.scope,
+        scopeId: r.scopeId,
+        permission: r.permission,
+        pattern: r.pattern,
+        action: r.action,
+        locked: !!r.locked && r.scope === "tenant",
+        priority: r.priority ?? 0,
+        createdBy: by ?? null,
+      }),
     );
     return id;
   }
 
   async delete(s: Subject, id: string, allowedScopes: SettingScope[]): Promise<boolean> {
-    const r = await this.db.withTenant(s.tenantId, (q) =>
-      q.query(
-        `delete from permission_rules where id = $1 and scope in (select jsonb_array_elements_text(($2::text)::jsonb)) and (scope <> 'user' or scope_id = $3) returning id`,
-        [id, JSON.stringify(allowedScopes), s.userId],
-      ),
+    const rows = await this.db.withTenant(s.tenantId, (q) =>
+      q.orm
+        .delete(permissionRules)
+        .where(
+          and(
+            eq(permissionRules.id, id),
+            inArray(permissionRules.scope, allowedScopes),
+            or(ne(permissionRules.scope, "user"), eq(permissionRules.scopeId, s.userId)),
+          ),
+        )
+        .returning({ id: permissionRules.id }),
     );
-    return r.length > 0;
+    return rows.length > 0;
   }
+}
+
+// ---------- helpers ----------
+/** The tenant's rules, the user's own, and the current project's. */
+function visibleTo(s: Subject): SQL | undefined {
+  return or(
+    and(eq(permissionRules.scope, "tenant"), eq(permissionRules.scopeId, s.tenantId)),
+    and(eq(permissionRules.scope, "user"), eq(permissionRules.scopeId, s.userId)),
+    and(
+      eq(permissionRules.scope, "project"),
+      eq(permissionRules.scopeId, s.projectId ?? NO_PROJECT_ID),
+    ),
+  );
 }

@@ -7,9 +7,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@exa/protocol": "workspace:*",
-    "@exa/core": "workspace:*",
     "@electric-sql/pglite": "^0.3.0",
+    "@exa/core": "workspace:*",
+    "@exa/protocol": "workspace:*",
+    "drizzle-orm": "0.45.4",
     "zod": "^4.1.0"
   }
 }

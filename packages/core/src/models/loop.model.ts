@@ -11,7 +11,9 @@ import type {
   EnvInfo,
   EventSink,
   InstructionsPort,
+  MemoryPort,
   ModelPort,
+  SearchPort,
   SessionStore,
   SkillsPort,
   SnapshotPort,
@@ -37,6 +39,10 @@ export interface LoopDeps {
   env: () => EnvInfo | Promise<EnvInfo>;
   hooks?: HookRunner;
   instructions?: InstructionsPort;
+  /** Long-term memory: injected into the system prompt and handed to tools as `services.memory`. */
+  memory?: MemoryPort;
+  /** Web search, handed to tools as `services.search`. */
+  search?: SearchPort;
   skills?: SkillsPort;
   snapshots?: SnapshotPort;
   outputDir: string;

@@ -1,5 +1,6 @@
-// Server-hosted agent loops for light clients (web, phone): one live AgentLoop per active
-// session, each with its own workspace, optional Docker sandbox and the org's policy applied.
+// Server-hosted agent loops for light clients (web, phone) and scheduled tasks: one live
+// AgentLoop per active session, each with its own workspace, optional Docker sandbox, the org's
+// policy, and the user's memory, web search and connectors when the server provides them.
 
 import { join } from "node:path";
 import {
@@ -9,6 +10,10 @@ import {
   agentFromSpec,
   type EventBus,
   HookRunner,
+  type MemoryPort,
+  PermissionDeniedError,
+  type PromptResult,
+  type SearchPort,
   type SkillsPort,
   secretScrubHook,
   ToolRegistry,
@@ -22,6 +27,7 @@ import {
 import type { Gateway } from "@exa/router";
 import { builtinTools, FileTimes, GitSnapshots, TodoStore } from "@exa/tools";
 import type { ServerConfig } from "../config/env.config.ts";
+import type { ConnectedTools } from "../models/connector.model.ts";
 import type { Principal } from "../models/principal.model.ts";
 import type { ResolvedSettings } from "../models/settings.model.ts";
 import type { Subject } from "../models/subject.model.ts";
@@ -53,6 +59,19 @@ export interface ServerRuntimeDeps {
   bus: EventBus;
   approvals: ApprovalBroker;
   telemetry: TelemetryWriter;
+  /** The user's long-term memory; absent → no memory tools and no memory in the prompt. */
+  memoryFor?: (tenantId: string, userId: string) => MemoryPort;
+  /** Web search from the server config; absent → no websearch tool. */
+  search?: SearchPort | null;
+  /** The user's enabled remote MCP connectors, connected for one live session. */
+  connectorsFor?: (subject: Subject) => Promise<ConnectedTools>;
+}
+
+/** What to run: the user's text plus optional per-turn agent/model overrides. */
+interface PromptRequest {
+  text: string;
+  agent?: string;
+  model?: string;
 }
 
 type RuntimeSession = SessionInfo & { permissionMode?: string };
@@ -71,6 +90,7 @@ interface LiveSession {
   permissions: PermissionState;
   sandbox?: DockerSandbox;
   agents: AgentRegistry;
+  connectors?: ConnectedTools;
 }
 
 interface LoopParts {
@@ -84,9 +104,21 @@ interface LoopParts {
   sandbox?: DockerSandbox;
   agents: AgentRegistry;
   skills: SkillsPort;
+  connectors?: ConnectedTools;
 }
 
 // ---------- errors ----------
+/**
+ * A scheduled run reached an action that needs approval. Nobody is there to give it, so the
+ * call is denied — the agent sees the reason and carries on, instead of the run ending.
+ */
+class UnattendedDenial extends PermissionDeniedError {
+  constructor(permission: string, pattern: string) {
+    super(permission, pattern);
+    this.message = `Not allowed in a scheduled run: ${permission} "${pattern}" needs the user's approval and nobody is there to give it. Don't retry it; finish what you can without it and say in your result what needed approval.`;
+  }
+}
+
 /** A prompt arrived while the session's loop is still running a turn (surfaces as HTTP 409). */
 class SessionBusyError extends Error {
   readonly status = SESSION_BUSY_STATUS;
@@ -122,11 +154,7 @@ export class ServerRuntime {
   }
 
   /** Starts a run in the background; progress is on the event stream. */
-  async prompt(
-    p: Principal,
-    session: RuntimeSession,
-    input: { text: string; agent?: string; model?: string },
-  ): Promise<void> {
+  async prompt(p: Principal, session: RuntimeSession, input: PromptRequest): Promise<void> {
     const live = await this.liveFor(p, session);
     if (live.loop.isBusy(session.id)) throw new SessionBusyError();
     void live.loop
@@ -137,6 +165,18 @@ export class ServerRuntime {
           makeEvent("session.error", session.id, { error: { name: "RuntimeError", message } }),
         );
       });
+  }
+
+  /** Runs a prompt to completion (scheduled tasks). Progress is still published as events. */
+  async run(p: Principal, session: RuntimeSession, input: PromptRequest): Promise<PromptResult> {
+    const live = await this.liveFor(p, session);
+    if (live.loop.isBusy(session.id)) throw new SessionBusyError();
+    return live.loop.prompt({
+      sessionId: session.id,
+      text: input.text,
+      agent: input.agent,
+      model: input.model,
+    });
   }
 
   abort(sessionId: string): boolean {
@@ -166,7 +206,7 @@ export class ServerRuntime {
   async forget(tenantId: string, sessionId: string): Promise<void> {
     const live = this.live.get(sessionId);
     live?.loop.abort(sessionId);
-    await live?.sandbox?.stop();
+    if (live) await stopLive(live);
     this.live.delete(sessionId);
     this.deps.bus.drop(sessionId);
     // The workspace may never have been created (chat-only sessions); nothing to clean up then.
@@ -179,7 +219,7 @@ export class ServerRuntime {
     let evicted = 0;
     for (const [id, live] of this.live) {
       if (live.lastActive >= cutoff || live.loop.isBusy(id)) continue;
-      await live.sandbox?.stop();
+      await stopLive(live);
       this.live.delete(id);
       evicted++;
     }
@@ -190,7 +230,7 @@ export class ServerRuntime {
   async shutdown(): Promise<void> {
     for (const [id, live] of this.live) {
       live.loop.abort(id);
-      await live.sandbox?.stop();
+      await stopLive(live);
     }
     this.live.clear();
   }
@@ -242,6 +282,7 @@ export class ServerRuntime {
     for (const spec of await this.deps.extensions.agents(subject))
       agents.register(agentFromSpec(spec));
     const skills = orgSkills(this.deps.extensions, subject);
+    const connectors = await this.connectorsFor(subject);
     const loop = this.buildLoop({
       tenantId,
       session,
@@ -253,6 +294,7 @@ export class ServerRuntime {
       sandbox,
       agents,
       skills,
+      connectors,
     });
     return {
       loop,
@@ -262,7 +304,19 @@ export class ServerRuntime {
       permissions,
       sandbox,
       agents,
+      connectors,
     };
+  }
+
+  /** Connector failures never block a chat: it just runs without them. */
+  private async connectorsFor(subject: Subject): Promise<ConnectedTools | undefined> {
+    if (!this.deps.connectorsFor) return undefined;
+    try {
+      return await this.deps.connectorsFor(subject);
+    } catch (err) {
+      console.error("[exa-server] connectors unavailable", err);
+      return undefined;
+    }
   }
 
   private sandboxFor(
@@ -277,22 +331,31 @@ export class ServerRuntime {
   }
 
   private buildLoop(parts: LoopParts): AgentLoop {
-    const { tenantId, session, subject, permissions, dir, sandbox, skills } = parts;
+    const { tenantId, session, subject, permissions, dir, sandbox, skills, connectors } = parts;
     const principal = { tenantId, userId: session.userId, sessionId: session.id };
-    const approvals: ApprovalPort = {
-      request: (req, signal) => this.deps.approvals.ask(tenantId, req, signal),
-    };
+    const memory = this.deps.memoryFor?.(tenantId, session.userId);
+    const search = this.deps.search ?? undefined;
+    const tools = builtinTools({
+      files: parts.hasFiles,
+      shell: !!sandbox,
+      web: true,
+      memory: !!memory,
+      search: !!search,
+    });
     return new AgentLoop({
       model: { stream: (req, signal) => this.deps.gateway.stream(principal, req, signal) },
       store: this.storeFor(tenantId),
       events: this.deps.bus,
-      tools: new ToolRegistry(builtinTools({ files: parts.hasFiles, shell: !!sandbox, web: true })),
+      tools: new ToolRegistry([...tools, ...(connectors?.tools ?? [])]),
       agents: parts.agents,
       skills,
+      memory,
+      search,
+      instructions: connectors?.instructions,
       permissions: {
         rules: () => permissions.rules,
         mode: () => permissions.mode,
-        approvals,
+        approvals: this.approvalsFor(tenantId, session),
         authorizer: {
           authorize: (req) => this.deps.policy.authorize(subject, req, permissions.mode),
         },
@@ -315,6 +378,17 @@ export class ServerRuntime {
     });
   }
 
+  /** Chats ask the user (any attached client answers); scheduled runs refuse instead. */
+  private approvalsFor(tenantId: string, session: RuntimeSession): ApprovalPort {
+    if (session.taskId)
+      return {
+        request: async (req) => {
+          throw new UnattendedDenial(req.permission, req.patterns.join(", "));
+        },
+      };
+    return { request: (req, signal) => this.deps.approvals.ask(tenantId, req, signal) };
+  }
+
   private buildHooks(tenantId: string, session: RuntimeSession): HookRunner {
     return new HookRunner([
       secretScrubHook,
@@ -335,6 +409,14 @@ export class ServerRuntime {
 }
 
 // ---------- helpers ----------
+/** Frees what a live session holds outside the process: its sandbox and connector sessions. */
+async function stopLive(live: LiveSession): Promise<void> {
+  await live.sandbox?.stop();
+  await live.connectors?.close().catch((err) => {
+    console.error("[exa-server] closing connectors failed", err);
+  });
+}
+
 function sandboxEnv(dir: string) {
   return {
     root: dir,

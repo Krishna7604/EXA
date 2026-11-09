@@ -1,9 +1,11 @@
 # exa
 
-A multi-tenant AI coding-agent harness. One agent loop, two places to run it:
+A self-hosted, multi-tenant **personal AI agent**. It researches, writes, plans and handles everyday work; it remembers what you tell it, runs recurring tasks on a schedule, uses the apps you connect, and — given a workspace — writes code. One agent loop, two places to run it:
 
-- **Heavy client** (`exa` CLI): the loop runs on your machine, tools act on your files, and the server provides models, policy, approvals, audit and (optionally) chat storage.
-- **Light client** (web UI): the loop runs on the server. By default it gets **no filesystem at all** — web fetch, todos, skills and subagents, but no read/write/edit/glob/grep/bash and no workspace directory on the VM. Set the org's `web.tools` setting to `agent` to restore the full toolset in a per-chat sandbox.
+- **Web app** (light client): the loop runs on the server. Chats get web search and page reading, long-term memory, plans (todos), skills, helper subagents and your connectors — but **no filesystem** by default. Set the org's `web.tools` setting to `agent` to add files and code in a per-chat sandbox.
+- **CLI** (heavy client, `exa`): the loop runs on your machine, tools act on your files, and the server provides models, policy, approvals, memory, audit and chat storage.
+
+Every chat and every message is stored in Postgres by default and kept until you delete it (orgs can change both). The design for the personal-agent features is in [`docs/13`](docs/13-personal-agent.md).
 
 Both kinds of client use the same protocol, the same permission engine and the same `exa` model router. Design docs are in [`docs/07`](docs/07-multitenant-server-client-plan.md), [`docs/08`](docs/08-dual-loop-and-db-architecture.md) and [`docs/09`](docs/09-opencode-lessons.md). The as-built architecture is in [`docs/10`](docs/10-implementation.md).
 
@@ -61,7 +63,12 @@ docker compose up -d      # exa server + Postgres 16
 |---|---|
 | **Models** | `exa` (auto tier) or `exa/fast`, `exa/balanced`, `exa/strong` use the org pool, with health-aware fallback across backends. `provider/model` (e.g. `openai/gpt-5`) uses your key (BYOK), and falls back to the pool if the org allows it. |
 | **BYOK** | Keys are envelope-encrypted (AES-256-GCM, a data key per secret, master-key versions for rotation). They are decrypted only in the gateway at call time and never returned or logged. |
-| **Chat storage** | `none` keeps content in memory only. `local` keeps it on your device in `~/.exa/sessions`, append-only and 0600. `server` stores it in Postgres. Admins can lock the mode for the whole org. Session metadata, usage and audit are always kept. |
+| **Chat storage** | `server` (the default) stores every chat and message in Postgres, kept forever unless the org sets `retention.contentDays`. `local` keeps CLI chats on your device in `~/.exa/sessions` (append-only, 0600); `none` keeps content in memory only. Admins can lock the mode. Session metadata, usage and audit are always kept. |
+| **Agents** | `assistant` (default) is a general personal agent; `build` is the coding specialist; `plan`, `explore` and `general` are read-only/subagent helpers. Pick with `/agent` in the CLI. |
+| **Memory** | The agent saves lasting facts and preferences with `memory_save` and sees them at the start of every turn; `recall` searches memories and past chats (Postgres full-text). You can view, edit and delete everything on the web Memory page. |
+| **Scheduled tasks** | A prompt plus a cron schedule and time zone. The server runs it as you, each run becomes a chat, and actions that need approval are denied (with the reason) rather than left waiting. Multi-node safe (`FOR UPDATE SKIP LOCKED`). |
+| **Web search** | `websearch` uses Tavily, Brave or a self-hosted SearXNG when configured, otherwise a best-effort keyless fallback; `webfetch` reads pages (asks first). |
+| **Connectors** | Remote MCP servers (HTTPS) added per user or per org on the web Tools page. Secret headers are encrypted with the BYOK vault and never returned; connector tools ask before running. |
 | **Permissions** | Rules have the form `permission pattern → allow/ask/deny`. Within a scope the last match wins; locked org rules always win. Bash is matched per parsed sub-command. Secrets (`.env`, keys, `~/.ssh`) are hard-denied. Modes: `default`, `accept-edits`, `plan` (read-only), `bypass` (only if the org allows it). |
 | **Approvals** | Approvals are held by the server. Any attached client can answer, and the first answer wins: approve a CLI action from the web UI, or the other way round. |
 | **Undo** | Every step is snapshotted into a shadow git repo (separate from your `.git`). `/undo` and `/redo` restore both the files and the conversation. |
@@ -89,9 +96,9 @@ bun run test:pg     # store + server suites against a real Postgres (EXA_TEST_DA
 | `packages/core` | Agent loop, permission engine, shell parser, agents, context/compaction, event bus |
 | `packages/tools` | Built-in tools, path confinement, snapshots, skills/instructions, MCP client, apply_patch |
 | `packages/router` | Provider adapters (OpenAI-compatible, Anthropic, Bedrock), `exa` orchestrator, vault, gateway |
-| `packages/store` | Postgres/PGlite driver + RLS, migrations, local JSONL chat storage |
+| `packages/store` | Postgres/PGlite driver + RLS, the Drizzle ORM handle and table definitions, SQL migrations, local JSONL chat storage |
 | `apps/server` | HTTP + SSE API: controllers → services → repositories → models, plus middlewares, server loop runtime, sandbox |
 | `apps/cli` | Heavy client |
-| `apps/web` | Light client (static, served by the server) |
+| `apps/web` | Web app (static ES modules, no build step, served by the server): chat, tasks, memory, tools, settings |
 
 `harness/` is the v1 prototype, kept for reference. Code layout and conventions: [`docs/CODE_STYLE.md`](docs/CODE_STYLE.md) and [`AGENTS.md`](AGENTS.md). Database tables and diagrams: [`docs/12-database-map.html`](docs/12-database-map.html).

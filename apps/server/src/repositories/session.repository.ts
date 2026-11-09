@@ -3,7 +3,17 @@
 // with the runtime ("none"), or not at all on the server ("local" lives on the client).
 // Also holds per-session leases (one loop host at a time) and pending approvals.
 import type { MessageInfo, MessageWithParts, Part, SessionInfo } from "@exa/protocol";
-import type { Db } from "@exa/store";
+import {
+  approvals,
+  type Db,
+  messages,
+  parts as partsTable,
+  sessionEvents,
+  sessionLeases,
+  sessions,
+  todos as todosTable,
+} from "@exa/store";
+import { and, desc, eq, gt, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm";
 import { DEFAULT_APPROVAL_TIMEOUT_MS } from "../constants/limits.constants.ts";
 import type { LeaseHolder, NewApproval, SessionMeta } from "../models/session.model.ts";
 import {
@@ -27,10 +37,10 @@ export class SessionRepo {
   }
 
   async get(tenantId: string, id: string): Promise<SessionMeta | null> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query<any>(`select * from sessions where id = $1`, [id]),
+    const [row] = await this.db.withTenant(tenantId, (q) =>
+      q.orm.select().from(sessions).where(eq(sessions.id, id)),
     );
-    return r[0] ? { ...sessionFromRow(r[0]), permissionMode: r[0].permission_mode } : null;
+    return row ? { ...sessionFromRow(row), permissionMode: row.permissionMode } : null;
   }
 
   async list(
@@ -39,17 +49,19 @@ export class SessionRepo {
     opts: { limit?: number; parentId?: string | null; includeArchived?: boolean } = {},
   ): Promise<SessionInfo[]> {
     const limit = opts.limit ?? DEFAULT_LIST_LIMIT;
-    const parentFilter = opts.parentId ? "parent_id = $3" : "parent_id is null";
-    const archivedFilter = opts.includeArchived ? "" : "and archived_at is null";
-    const params = opts.parentId ? [userId, limit, opts.parentId] : [userId, limit];
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query<any>(
-        `select * from sessions where user_id = $1 and ${parentFilter}
-         ${archivedFilter} order by updated_at desc limit $2`,
-        params,
-      ),
+    const parentFilter = opts.parentId
+      ? eq(sessions.parentId, opts.parentId)
+      : isNull(sessions.parentId);
+    const archivedFilter = opts.includeArchived ? undefined : isNull(sessions.archivedAt);
+    const rows = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .select()
+        .from(sessions)
+        .where(and(eq(sessions.userId, userId), parentFilter, archivedFilter))
+        .orderBy(desc(sessions.updatedAt))
+        .limit(limit),
     );
-    return r.map(sessionFromRow);
+    return rows.map(sessionFromRow);
   }
 
   async update(
@@ -62,15 +74,18 @@ export class SessionRepo {
 
   /** "Forget": removes the session and everything hanging off it. */
   async delete(tenantId: string, id: string): Promise<boolean> {
-    const r = await this.db.withTenant(tenantId, async (q) => {
-      await q.query(
-        `delete from session_events where session_id = $1 or session_id in (select id from sessions where parent_id = $1)`,
-        [id],
-      );
-      await q.query(`delete from sessions where parent_id = $1`, [id]);
-      return q.query(`delete from sessions where id = $1 returning id`, [id]);
+    const rows = await this.db.withTenant(tenantId, async (q) => {
+      const children = q.orm
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(eq(sessions.parentId, id));
+      await q.orm
+        .delete(sessionEvents)
+        .where(or(eq(sessionEvents.sessionId, id), inArray(sessionEvents.sessionId, children)));
+      await q.orm.delete(sessions).where(eq(sessions.parentId, id));
+      return q.orm.delete(sessions).where(eq(sessions.id, id)).returning({ id: sessions.id });
     });
-    return r.length > 0;
+    return rows.length > 0;
   }
 
   // ---- leases (one loop host per session) ----
@@ -80,19 +95,37 @@ export class SessionRepo {
     holder: LeaseHolder,
     ttlMs: number,
   ): Promise<number | null> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query<{ fencing: string }>(
-        `insert into session_leases (session_id, tenant_id, holder_type, holder_id, fencing, expires_at)
-         values ($1, $2, $3, $4, 1, now() + make_interval(secs => $5::double precision / 1000))
-         on conflict (session_id) do update set holder_type = excluded.holder_type, holder_id = excluded.holder_id,
-           fencing = session_leases.fencing + 1, expires_at = excluded.expires_at
-         where session_leases.expires_at < now()
-            or (session_leases.holder_type = excluded.holder_type and session_leases.holder_id = excluded.holder_id)
-         returning fencing`,
-        [sessionId, tenantId, holder.type, holder.id, ttlMs],
-      ),
+    const [row] = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .insert(sessionLeases)
+        .values({
+          sessionId,
+          tenantId,
+          holderType: holder.type,
+          holderId: holder.id,
+          fencing: 1,
+          expiresAt: nowPlusMs(ttlMs),
+        })
+        .onConflictDoUpdate({
+          target: sessionLeases.sessionId,
+          set: {
+            holderType: sql`excluded.holder_type`,
+            holderId: sql`excluded.holder_id`,
+            fencing: sql`${sessionLeases.fencing} + 1`,
+            expiresAt: sql`excluded.expires_at`,
+          },
+          // take over an expired lease, or extend our own
+          setWhere: or(
+            lt(sessionLeases.expiresAt, sql`now()`),
+            and(
+              eq(sessionLeases.holderType, sql`excluded.holder_type`),
+              eq(sessionLeases.holderId, sql`excluded.holder_id`),
+            ),
+          ),
+        })
+        .returning({ fencing: sessionLeases.fencing }),
     );
-    return r[0] ? Number(r[0].fencing) : null;
+    return row ? row.fencing : null;
   }
 
   async renewLease(
@@ -102,14 +135,14 @@ export class SessionRepo {
     fencing: number,
     ttlMs: number,
   ): Promise<boolean> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query(
-        `update session_leases set expires_at = now() + make_interval(secs => $5::double precision / 1000)
-         where session_id = $1 and holder_type = $2 and holder_id = $3 and fencing = $4 and expires_at > now() returning session_id`,
-        [sessionId, holder.type, holder.id, fencing, ttlMs],
-      ),
+    const rows = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .update(sessionLeases)
+        .set({ expiresAt: nowPlusMs(ttlMs) })
+        .where(and(heldBy(sessionId, holder, fencing), gt(sessionLeases.expiresAt, sql`now()`)))
+        .returning({ sessionId: sessionLeases.sessionId }),
     );
-    return r.length > 0;
+    return rows.length > 0;
   }
 
   async releaseLease(
@@ -118,47 +151,47 @@ export class SessionRepo {
     holder: { type: string; id: string },
     fencing: number,
   ): Promise<boolean> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query(
-        `delete from session_leases where session_id = $1 and holder_type = $2 and holder_id = $3 and fencing = $4 returning session_id`,
-        [sessionId, holder.type, holder.id, fencing],
-      ),
+    const rows = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .delete(sessionLeases)
+        .where(heldBy(sessionId, holder, fencing))
+        .returning({ sessionId: sessionLeases.sessionId }),
     );
-    return r.length > 0;
+    return rows.length > 0;
   }
 
   async currentLease(
     tenantId: string,
     sessionId: string,
   ): Promise<{ holderType: string; holderId: string; fencing: number } | null> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query<any>(
-        `select holder_type, holder_id, fencing from session_leases where session_id = $1 and expires_at > now()`,
-        [sessionId],
-      ),
+    const [row] = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .select({
+          holderType: sessionLeases.holderType,
+          holderId: sessionLeases.holderId,
+          fencing: sessionLeases.fencing,
+        })
+        .from(sessionLeases)
+        .where(
+          and(eq(sessionLeases.sessionId, sessionId), gt(sessionLeases.expiresAt, sql`now()`)),
+        ),
     );
-    return r[0]
-      ? { holderType: r[0].holder_type, holderId: r[0].holder_id, fencing: Number(r[0].fencing) }
-      : null;
+    return row ?? null;
   }
 
   // ---- approvals (server-held so any attached UI can answer) ----
   async createApproval(tenantId: string, a: NewApproval): Promise<void> {
     await this.db.withTenant(tenantId, (q) =>
-      q.query(
-        `insert into approvals (id, tenant_id, session_id, permission, tool, patterns, title, expires_at)
-         values ($1,$2,$3,$4,$5,coalesce((select array_agg(x) from jsonb_array_elements_text((($6)::text)::jsonb) x), '{}'),$7, now() + make_interval(secs => $8::double precision / 1000))`,
-        [
-          a.id,
-          tenantId,
-          a.sessionId,
-          a.permission,
-          a.tool ?? null,
-          JSON.stringify(a.patterns),
-          a.title.slice(0, MAX_APPROVAL_TITLE_CHARS),
-          a.ttlMs ?? DEFAULT_APPROVAL_TIMEOUT_MS,
-        ],
-      ),
+      q.orm.insert(approvals).values({
+        id: a.id,
+        tenantId,
+        sessionId: a.sessionId,
+        permission: a.permission,
+        tool: a.tool ?? null,
+        patterns: a.patterns,
+        title: a.title.slice(0, MAX_APPROVAL_TITLE_CHARS),
+        expiresAt: nowPlusMs(a.ttlMs ?? DEFAULT_APPROVAL_TIMEOUT_MS),
+      }),
     );
   }
 
@@ -170,29 +203,38 @@ export class SessionRepo {
     reply: "once" | "always" | "reject",
     by: string | null,
   ): Promise<boolean> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query<any>(
-        `update approvals set state = $3, decided_by = $4, decided_at = now()
-         where id = $1 and session_id = $2 and state = 'pending' and expires_at > now() returning id`,
-        [id, sessionId, reply, by],
-      ),
+    const rows = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .update(approvals)
+        .set({ state: reply, decidedBy: by, decidedAt: sql`now()` })
+        .where(and(eq(approvals.id, id), eq(approvals.sessionId, sessionId), isOpenApproval()))
+        .returning({ id: approvals.id }),
     );
-    return r.length > 0;
+    return rows.length > 0;
   }
 
   async approvalState(tenantId: string, id: string): Promise<string | null> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query<{ state: string }>(`select state from approvals where id = $1`, [id]),
+    const [row] = await this.db.withTenant(tenantId, (q) =>
+      q.orm.select({ state: approvals.state }).from(approvals).where(eq(approvals.id, id)),
     );
-    return r[0]?.state ?? null;
+    return row?.state ?? null;
   }
 
+  /** Open approvals of a session, oldest first, as snake_case rows (see PendingApprovalRow). */
   async pendingApprovals(tenantId: string, sessionId: string) {
     return this.db.withTenant(tenantId, (q) =>
-      q.query<any>(
-        `select id, permission, tool, patterns, title, requested_at from approvals where session_id = $1 and state = 'pending' and expires_at > now() order by requested_at`,
-        [sessionId],
-      ),
+      q.orm
+        .select({
+          id: approvals.id,
+          permission: approvals.permission,
+          tool: approvals.tool,
+          patterns: approvals.patterns,
+          title: approvals.title,
+          requested_at: approvals.requestedAt,
+        })
+        .from(approvals)
+        .where(and(eq(approvals.sessionId, sessionId), isOpenApproval()))
+        .orderBy(approvals.requestedAt),
     );
   }
 
@@ -210,34 +252,34 @@ export class SessionRepo {
   async putStep(tenantId: string, info: MessageInfo, parts: Part[]): Promise<void> {
     await this.db.withTenant(tenantId, async (q) => {
       await putMessage(q, tenantId, info);
-      await putParts(q, tenantId, parts);
+      // a client step may carry no parts (e.g. an empty reply); there is nothing to insert then
+      if (parts.length) await putParts(q, tenantId, parts);
     });
   }
 
   async messages(tenantId: string, sessionId: string): Promise<MessageWithParts[]> {
     return this.db.withTenant(tenantId, async (q) => {
-      const msgs = await q.query<any>(
-        `select data from messages where session_id = $1 order by id`,
-        [sessionId],
-      );
-      const parts = await q.query<any>(
-        `select message_id, data from parts where session_id = $1 order by message_id, id`,
-        [sessionId],
-      );
+      const msgs = await q.orm
+        .select({ data: messages.data })
+        .from(messages)
+        .where(eq(messages.sessionId, sessionId))
+        .orderBy(messages.id);
+      const parts = await q.orm
+        .select({ messageId: partsTable.messageId, data: partsTable.data })
+        .from(partsTable)
+        .where(eq(partsTable.sessionId, sessionId))
+        .orderBy(partsTable.messageId, partsTable.id);
       const byMsg = groupPartsByMessage(parts);
-      return msgs.map((m) => ({
-        info: m.data as MessageInfo,
-        parts: byMsg.get((m.data as MessageInfo).id) ?? [],
-      }));
+      return msgs.map((m) => ({ info: m.data, parts: byMsg.get(m.data.id) ?? [] }));
     });
   }
 
   async deleteMessages(tenantId: string, sessionId: string, ids: string[]): Promise<void> {
     if (!ids.length) return;
     await this.db.withTenant(tenantId, (q) =>
-      q.query(
-        `delete from messages where session_id = $1 and id::text in (select jsonb_array_elements_text(($2::text)::jsonb))`,
-        [sessionId, JSON.stringify(ids)],
+      q.orm.delete(messages).where(
+        // compared as text so a malformed id matches nothing instead of failing the uuid cast
+        and(eq(messages.sessionId, sessionId), inArray(sql`${messages.id}::text`, ids)),
       ),
     );
   }
@@ -247,47 +289,74 @@ export class SessionRepo {
     sessionId: string,
     todos: Array<{ content: string; status: string; priority?: string }>,
   ): Promise<void> {
+    const rows = todos.map((t, position) => ({
+      tenantId,
+      sessionId,
+      position,
+      content: t.content,
+      status: t.status,
+      priority: t.priority ?? null,
+    }));
     await this.db.withTenant(tenantId, async (q) => {
-      await q.query(`delete from todos where session_id = $1`, [sessionId]);
-      for (let i = 0; i < todos.length; i++) {
-        await q.query(
-          `insert into todos (tenant_id, session_id, position, content, status, priority) values ($1,$2,$3,$4,$5,$6)`,
-          [tenantId, sessionId, i, todos[i].content, todos[i].status, todos[i].priority ?? null],
-        );
-      }
+      await q.orm.delete(todosTable).where(eq(todosTable.sessionId, sessionId));
+      if (rows.length) await q.orm.insert(todosTable).values(rows);
     });
   }
 
   async expireApprovals(tenantId: string): Promise<number> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query(
-        `update approvals set state = 'expired' where state = 'pending' and expires_at < now() returning id`,
-      ),
+    const rows = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .update(approvals)
+        .set({ state: "expired" })
+        .where(and(eq(approvals.state, "pending"), lt(approvals.expiresAt, sql`now()`)))
+        .returning({ id: approvals.id }),
     );
-    return r.length;
+    return rows.length;
   }
 
   /** Content retention: delete stored conversation content older than `days` for a tenant. */
   async purgeContent(tenantId: string, days: number): Promise<number> {
-    const r = await this.db.withTenant(tenantId, (q) =>
-      q.query(
-        `delete from messages where created_at < now() - make_interval(days => $1) returning id`,
-        [days],
-      ),
+    const rows = await this.db.withTenant(tenantId, (q) =>
+      q.orm
+        .delete(messages)
+        .where(lt(messages.createdAt, sql`now() - make_interval(days => ${days})`))
+        .returning({ id: messages.id }),
     );
-    return r.length;
+    return rows.length;
   }
 }
 
 // ---------- helpers ----------
-function groupPartsByMessage(
-  rows: Array<{ message_id: string; data: unknown }>,
-): Map<string, Part[]> {
+/** `now()` plus a duration in milliseconds, as a timestamptz expression. */
+function nowPlusMs(ms: number): SQL {
+  return sql`now() + make_interval(secs => ${ms}::double precision / 1000)`;
+}
+
+/** The lease row of `sessionId`, if `holder` still holds it under this fencing token. */
+function heldBy(
+  sessionId: string,
+  holder: { type: string; id: string },
+  fencing: number,
+): SQL | undefined {
+  return and(
+    eq(sessionLeases.sessionId, sessionId),
+    eq(sessionLeases.holderType, holder.type),
+    eq(sessionLeases.holderId, holder.id),
+    eq(sessionLeases.fencing, fencing),
+  );
+}
+
+/** Still waiting for an answer and not yet timed out. */
+function isOpenApproval(): SQL | undefined {
+  return and(eq(approvals.state, "pending"), gt(approvals.expiresAt, sql`now()`));
+}
+
+function groupPartsByMessage(rows: Array<{ messageId: string; data: Part }>): Map<string, Part[]> {
   const byMsg = new Map<string, Part[]>();
   for (const p of rows) {
-    const a = byMsg.get(p.message_id) ?? [];
-    a.push(p.data as Part);
-    byMsg.set(p.message_id, a);
+    const a = byMsg.get(p.messageId) ?? [];
+    a.push(p.data);
+    byMsg.set(p.messageId, a);
   }
   return byMsg;
 }

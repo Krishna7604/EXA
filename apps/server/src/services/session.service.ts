@@ -1,6 +1,7 @@
 // Session lifecycle: create (storage mode + model policy), read, update, forget, and the
 // server-loop controls (prompt, abort, revert, compact, permission replies).
 
+import { DEFAULT_AGENT } from "@exa/core";
 import {
   type api,
   isUuid,
@@ -24,10 +25,10 @@ import { resolveStorageMode } from "./storage-mode.helper.ts";
 
 // ---------- constants ----------
 const DEFAULT_MODEL = "exa";
-const DEFAULT_AGENT = "build";
 
 // ---------- types ----------
-type CreateSessionInput = z.infer<typeof api.CreateSessionBody>;
+/** `taskId` is internal (scheduled runs); the public body schema never carries it. */
+type CreateSessionInput = z.infer<typeof api.CreateSessionBody> & { taskId?: string };
 type PatchSessionInput = z.infer<typeof api.PatchSessionBody>;
 type PromptInput = z.infer<typeof api.PromptBody>;
 type RevertInput = z.infer<typeof api.RevertBody>;
@@ -257,6 +258,7 @@ function newSessionInfo(
     userId: p.userId,
     projectId: input.projectId ?? null,
     parentId: input.parentId ?? null,
+    taskId: input.taskId ?? null,
     title: input.title ?? null,
     directory: isClientLoop ? (input.directory ?? null) : null,
     agent: input.agent ?? DEFAULT_AGENT,

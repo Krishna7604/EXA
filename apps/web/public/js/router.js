@@ -1,14 +1,25 @@
-// Hash routing: #/ (new chat), #/s/<id> (a chat), #/settings, #/device?code=...
+// Hash routing: #/ (new chat), #/s/<id> (a chat), #/tasks, #/memory, #/connectors, #/settings,
+// #/device?code=…
 
 import { $ } from "./helpers/dom.helper.js";
 import { boot, showLogin } from "./services/auth.service.js";
 import { state } from "./state.js";
 import { newChatView, openSession } from "./views/chat.view.js";
+import { openConnectors } from "./views/connectors.view.js";
 import { show } from "./views/layout.view.js";
+import { openMemory } from "./views/memory.view.js";
 import { openSettings } from "./views/settings.view.js";
+import { openTasks } from "./views/tasks.view.js";
 
 // ---------- constants ----------
 const SESSION_ROUTE = /^#\/s\/([0-9a-f-]{36})/;
+/** Page routes (hash prefix → opener). */
+const PAGES = [
+  ["#/tasks", openTasks],
+  ["#/memory", openMemory],
+  ["#/connectors", openConnectors],
+  ["#/settings", openSettings],
+];
 
 // ---------- routing ----------
 export async function route() {
@@ -19,7 +30,8 @@ export async function route() {
   }
   if (!state.me) await boot();
   if (hash.startsWith("#/device")) return showDevice(hash);
-  if (hash.startsWith("#/settings")) return openSettings();
+  const page = PAGES.find(([prefix]) => hash.startsWith(prefix));
+  if (page) return page[1](hash);
   const m = hash.match(SESSION_ROUTE);
   if (m) return openSession(m[1]);
   return newChatView();

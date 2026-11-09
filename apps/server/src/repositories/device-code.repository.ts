@@ -1,6 +1,7 @@
 // CLI device authorization codes: created by the CLI, approved by the user in the browser,
 // then exchanged exactly once for an API token. Global table.
-import type { Db } from "@exa/store";
+import { type Db, type DbTx, deviceCodes } from "@exa/store";
+import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { hashToken, randomToken } from "../helpers/tokens.helper.ts";
 import type { DevicePollResult, NewDeviceCode } from "../models/identity.model.ts";
 
@@ -10,7 +11,7 @@ const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const USER_CODE_LENGTH = 8;
 const DEVICE_CODE_PREFIX = "dc";
 const DEVICE_CODE_BYTES = 32;
-/** Must match the `interval '10 minutes'` in create's SQL. */
+/** How long a new code stays usable (10 minutes). */
 const DEVICE_CODE_TTL_SECONDS = 600;
 
 // ---------- device code repo ----------
@@ -20,55 +21,78 @@ export class DeviceCodeRepo {
   async create(clientName: string): Promise<NewDeviceCode> {
     const deviceCode = randomToken(DEVICE_CODE_PREFIX, DEVICE_CODE_BYTES);
     const userCode = newUserCode();
-    await this.db.query(
-      `insert into device_codes (device_code_hash, user_code, client_name, expires_at) values ($1,$2,$3, now() + interval '10 minutes')`,
-      [hashToken(deviceCode), userCode, clientName],
-    );
+    await this.db.orm.insert(deviceCodes).values({
+      deviceCodeHash: hashToken(deviceCode),
+      userCode,
+      clientName,
+      expiresAt: sql`now() + make_interval(secs => ${DEVICE_CODE_TTL_SECONDS})`,
+    });
     return { deviceCode, userCode, expiresIn: DEVICE_CODE_TTL_SECONDS };
   }
 
   async approve(userCode: string, tenantId: string, userId: string): Promise<boolean> {
-    const r = await this.db.query(
-      `update device_codes set status = 'approved', tenant_id = $2, user_id = $3
-       where user_code = upper($1) and status = 'pending' and expires_at > now() returning user_code`,
-      [userCode.trim(), tenantId, userId],
-    );
-    return r.length > 0;
+    const rows = await this.db.orm
+      .update(deviceCodes)
+      .set({ status: "approved", tenantId, userId })
+      .where(
+        and(
+          eq(deviceCodes.userCode, sql`upper(${userCode.trim()})`),
+          eq(deviceCodes.status, "pending"),
+          gt(deviceCodes.expiresAt, sql`now()`),
+        ),
+      )
+      .returning({ userCode: deviceCodes.userCode });
+    return rows.length > 0;
   }
 
   /** Returns the approval once (then marks it consumed); "pending" / "expired" / "denied" otherwise. */
   async poll(deviceCode: string): Promise<DevicePollResult> {
+    const hash = hashToken(deviceCode);
     return this.db.tx(async (q) => {
-      const r = await q.query<any>(
-        `select status, tenant_id, user_id, client_name, expires_at < now() as expired from device_codes where device_code_hash = $1 for update`,
-        [hashToken(deviceCode)],
-      );
-      const row = r[0];
+      const row = await lockDeviceCode(q, hash);
       if (!row || row.status === "consumed") return { status: "expired" as const };
       if (row.status === "denied") return { status: "denied" as const };
       if (row.expired) return { status: "expired" as const };
       if (row.status !== "approved") return { status: "pending" as const };
-      await q.query(`update device_codes set status = 'consumed' where device_code_hash = $1`, [
-        hashToken(deviceCode),
-      ]);
+      await q.orm
+        .update(deviceCodes)
+        .set({ status: "consumed" })
+        .where(eq(deviceCodes.deviceCodeHash, hash));
       return {
         status: "approved" as const,
-        tenantId: row.tenant_id as string,
-        userId: row.user_id as string,
-        clientName: row.client_name as string,
+        tenantId: row.tenantId as string,
+        userId: row.userId as string,
+        clientName: row.clientName as string,
       };
     });
   }
 
   async purgeExpired(): Promise<number> {
-    const rows = await this.db.query(
-      `delete from device_codes where expires_at < now() - interval '1 day' returning user_code`,
-    );
+    const rows = await this.db.orm
+      .delete(deviceCodes)
+      .where(lt(deviceCodes.expiresAt, sql`now() - interval '1 day'`))
+      .returning({ userCode: deviceCodes.userCode });
     return rows.length;
   }
 }
 
 // ---------- helpers ----------
+/** The code's row, locked for the rest of the transaction so it is exchanged only once. */
+async function lockDeviceCode(q: DbTx, hash: Uint8Array) {
+  const [row] = await q.orm
+    .select({
+      status: deviceCodes.status,
+      tenantId: deviceCodes.tenantId,
+      userId: deviceCodes.userId,
+      clientName: deviceCodes.clientName,
+      expired: sql<boolean>`${deviceCodes.expiresAt} < now()`,
+    })
+    .from(deviceCodes)
+    .where(eq(deviceCodes.deviceCodeHash, hash))
+    .for("update");
+  return row;
+}
+
 /** e.g. "BCDF-GHJK": short enough to type, from an unambiguous alphabet. */
 function newUserCode(): string {
   const b = crypto.getRandomValues(new Uint8Array(USER_CODE_LENGTH));

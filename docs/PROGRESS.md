@@ -17,4 +17,5 @@ Run everything: `bun run check` (typecheck + tests) · real Postgres: `bun run t
 | P5 | `apps/web`: login, device approval, chat (server loop), live viewer/approver for CLI sessions, settings, BYOK, usage, org policy | done (not browser-tested) |
 | P6 | OIDC, rate limits, retention/maintenance, forget, audit, Dockerfile + compose, README | done |
 | P6+ | org skills/agents API, deferred tool schemas (tool_search), approval polling for multi-node, SSRF DNS guard, sync rate-limit budget, pre-run compaction, approval cross-session fix | done |
-| next | event fan-out across nodes (LISTEN/NOTIFY), server-side MCP API, web polish + browser test | open |
+| P7 | Personal agent: `assistant` default agent, every chat stored by default (kept forever), Drizzle ORM in all repositories, long-term memory + chat search, scheduled tasks, web search, server-side MCP connectors, Iris web redesign (browser-tested) | done (docs/13) |
+| next | event fan-out across nodes (LISTEN/NOTIFY), notifications for task results, OAuth for connectors, files + knowledge (RAG), voice | open |

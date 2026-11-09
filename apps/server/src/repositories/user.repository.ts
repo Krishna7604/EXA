@@ -1,6 +1,7 @@
 // Users. A global table (no RLS), so queries run as the owner.
 import { newId } from "@exa/protocol";
-import type { Db } from "@exa/store";
+import { type Db, users } from "@exa/store";
+import { eq, sql } from "drizzle-orm";
 import type { User } from "../models/identity.model.ts";
 
 // ---------- user repo ----------
@@ -8,33 +9,37 @@ export class UserRepo {
   constructor(private readonly db: Db) {}
 
   async upsert(email: string, displayName?: string, authSubject?: string): Promise<User> {
-    const r = await this.db.query(
-      `insert into users (id, email, display_name, auth_subject) values ($1, lower($2), $3, $4)
-       on conflict (email) do update set display_name = coalesce(excluded.display_name, users.display_name),
-         auth_subject = coalesce(users.auth_subject, excluded.auth_subject)
-       returning *`,
-      [newId(), email, displayName ?? null, authSubject ?? null],
-    );
-    return userFromRow(r[0]);
+    const [row] = await this.db.orm
+      .insert(users)
+      .values({
+        id: newId(),
+        email: sql`lower(${email})`,
+        displayName: displayName ?? null,
+        authSubject: authSubject ?? null,
+      })
+      .onConflictDoUpdate({
+        target: users.email,
+        set: {
+          displayName: sql`coalesce(excluded.display_name, ${users.displayName})`,
+          authSubject: sql`coalesce(${users.authSubject}, excluded.auth_subject)`,
+        },
+      })
+      .returning();
+    return userFromRow(row);
   }
 
   async byId(id: string): Promise<User | null> {
-    const r = await this.db.query(`select * from users where id = $1`, [id]);
-    return r[0] ? userFromRow(r[0]) : null;
+    const [row] = await this.db.orm.select().from(users).where(eq(users.id, id));
+    return row ? userFromRow(row) : null;
   }
 
   async bySubject(sub: string): Promise<User | null> {
-    const r = await this.db.query(`select * from users where auth_subject = $1`, [sub]);
-    return r[0] ? userFromRow(r[0]) : null;
+    const [row] = await this.db.orm.select().from(users).where(eq(users.authSubject, sub));
+    return row ? userFromRow(row) : null;
   }
 }
 
 // ---------- helpers ----------
-// biome-ignore lint/suspicious/noExplicitAny: raw driver row
-function userFromRow(r: any): User {
-  return {
-    id: r.id,
-    email: r.email,
-    displayName: r.display_name ?? null,
-  };
+function userFromRow(r: typeof users.$inferSelect): User {
+  return { id: r.id, email: r.email, displayName: r.displayName ?? null };
 }

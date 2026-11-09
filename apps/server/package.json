@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@exa/protocol": "workspace:*",
     "@exa/core": "workspace:*",
+    "@exa/protocol": "workspace:*",
     "@exa/router": "workspace:*",
-    "@exa/tools": "workspace:*",
     "@exa/store": "workspace:*",
+    "@exa/tools": "workspace:*",
+    "croner": "10.0.1",
+    "drizzle-orm": "0.45.4",
     "zod": "^4.1.0"
   }
 }

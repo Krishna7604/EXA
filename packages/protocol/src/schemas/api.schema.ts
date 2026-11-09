@@ -15,6 +15,16 @@ const PERMISSION_KEY_MAX = 64;
 const TENANT_SLUG_PATTERN = /^[a-z0-9-]+$/;
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+const MEMORY_TOPIC_MAX = 80;
+const MEMORY_CONTENT_MAX = 2000;
+const SEARCH_QUERY_MAX = 300;
+const TASK_NAME_MAX = 120;
+const TASK_PROMPT_MAX = 20_000;
+const CRON_MAX = 120;
+const TIMEZONE_MAX = 64;
+const CONNECTOR_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
+const HEADER_NAME_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
+const HEADER_VALUE_MAX = 4096;
 
 // ---------- shared enums ----------
 export const StorageModeSchema = z.enum(["none", "local", "server"]);
@@ -221,4 +231,63 @@ export const PutAgentBody = z.object({
   tier: TierSchema.nullable().default(null),
   temperature: z.number().min(0).max(2).nullable().default(null),
   steps: z.number().int().min(1).max(500).nullable().default(null),
+});
+
+// ---------- memory ----------
+
+/** Create a memory (POST) or replace one (PUT /v1/memories/:id). */
+export const PutMemoryBody = z.object({
+  topic: z.string().trim().min(1).max(MEMORY_TOPIC_MAX),
+  content: z.string().trim().min(1).max(MEMORY_CONTENT_MAX),
+});
+
+/** `?q=` for memory and chat search. */
+export const SearchQuery = z.object({
+  q: z.string().trim().min(1).max(SEARCH_QUERY_MAX),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+// ---------- scheduled tasks ----------
+
+export const CreateTaskBody = z.object({
+  name: z.string().trim().min(1).max(TASK_NAME_MAX),
+  prompt: z.string().trim().min(1).max(TASK_PROMPT_MAX),
+  /** Five-field cron, e.g. "0 8 * * 1-5" (weekdays at 08:00). */
+  schedule: z.string().trim().min(9).max(CRON_MAX),
+  timezone: z.string().min(1).max(TIMEZONE_MAX).default("UTC"),
+  model: z.string().min(1).max(MODEL_NAME_MAX).nullable().default(null),
+  agent: z.string().min(1).max(AGENT_NAME_MAX).nullable().default(null),
+  enabled: z.boolean().default(true),
+});
+
+export const PatchTaskBody = z.object({
+  name: z.string().trim().min(1).max(TASK_NAME_MAX).optional(),
+  prompt: z.string().trim().min(1).max(TASK_PROMPT_MAX).optional(),
+  schedule: z.string().trim().min(9).max(CRON_MAX).optional(),
+  timezone: z.string().min(1).max(TIMEZONE_MAX).optional(),
+  model: z.string().min(1).max(MODEL_NAME_MAX).nullable().optional(),
+  agent: z.string().min(1).max(AGENT_NAME_MAX).nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+
+// ---------- connectors (remote MCP servers) ----------
+
+export const PutConnectorBody = z.object({
+  scope: z.enum(["tenant", "user"]).default("user"),
+  name: z.string().regex(CONNECTOR_NAME_PATTERN),
+  url: z.string().url().max(2048),
+  /** Sent on every request (e.g. Authorization). Stored encrypted; never returned. */
+  headers: z
+    .record(z.string().regex(HEADER_NAME_PATTERN), z.string().max(HEADER_VALUE_MAX))
+    .default({}),
+  enabled: z.boolean().default(true),
+});
+
+export const PatchConnectorBody = z.object({
+  url: z.string().url().max(2048).optional(),
+  /** Replaces all stored headers when present. */
+  headers: z
+    .record(z.string().regex(HEADER_NAME_PATTERN), z.string().max(HEADER_VALUE_MAX))
+    .optional(),
+  enabled: z.boolean().optional(),
 });

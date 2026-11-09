@@ -1,17 +1,17 @@
-// Live session events: the SSE subscription (with reconnect) and applying events to the open chat.
+// Live chat events: the SSE subscription (with reconnect) and applying events to the open chat.
 
-import { $ } from "../helpers/dom.helper.js";
-import { md } from "../helpers/markdown.helper.js";
+import { $, el } from "../helpers/dom.helper.js";
 import { state } from "../state.js";
-import { alertLine, renderApprovals } from "../views/approvals.view.js";
+import { chatError, renderApprovals } from "../views/approvals.view.js";
 import { openSession, renderHeader } from "../views/chat.view.js";
-import { rerenderMessage } from "../views/messages.view.js";
-import { refreshSessions } from "../views/sidebar.view.js";
+import { rerenderMessage, updateTextPart } from "../views/messages.view.js";
+import { markRunning, refreshSessions } from "../views/sidebar.view.js";
 
 // ---------- constants ----------
 const INITIAL_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 10000;
-const TODO_MARKS = { pending: "☐", in_progress: "◐", completed: "☑", cancelled: "☒" };
+/** The server's name for errors from the run itself rather than from one model step. */
+const RUNTIME_ERROR = "RuntimeError";
 
 // ---------- event stream ----------
 export function closeStream() {
@@ -19,8 +19,10 @@ export function closeStream() {
   state.stream = null;
 }
 
-/** Follow a session's events from `after`, reconnecting with backoff until closeStream(). */
+/** Follow a chat's events from `after`, reconnecting with backoff until closeStream(). */
 export async function subscribe(id, after) {
+  // one stream at a time: a second one would apply every streamed chunk twice
+  closeStream();
   const ac = new AbortController();
   state.stream = ac;
   let last = after;
@@ -34,6 +36,8 @@ export async function subscribe(id, after) {
       if (!res.ok) throw new Error(String(res.status));
       backoff = INITIAL_BACKOFF_MS;
       for await (const e of readEvents(res.body)) {
+        // events still buffered after this stream was replaced belong to nobody now
+        if (ac.signal.aborted) return;
         if (e.seq) last = e.seq;
         applyEvent(e);
       }
@@ -81,7 +85,7 @@ function applyEvent(e) {
   if (Object.hasOwn(EVENT_HANDLERS, e.type)) EVENT_HANDLERS[e.type](c, e.data);
 }
 
-/** Event type → (current chat, event data) handler; other event types are ignored. */
+/** Event type → (open chat, event data) handler; other event types are ignored. */
 const EVENT_HANDLERS = {
   "message.updated": onMessageUpdated,
   "message.part.updated": onPartUpdated,
@@ -98,13 +102,9 @@ const EVENT_HANDLERS = {
     c.approvals.delete(d.requestId);
     renderApprovals();
   },
-  "session.status": (c, d) => {
-    c.busy = d.status !== "idle";
-    renderHeader();
-  },
+  "session.status": (c, d) => setBusy(c, d.status !== "idle"),
   "session.idle": (c) => {
-    c.busy = false;
-    renderHeader();
+    setBusy(c, false);
     refreshSessions().catch(() => {});
   },
   "session.updated": (c, d) => {
@@ -112,10 +112,20 @@ const EVENT_HANDLERS = {
     renderHeader();
     if (d.info.title) refreshSessions().catch(() => {});
   },
-  "session.error": (_c, d) => alertLine(d.error.message),
-  "todo.updated": (_c, d) => renderTodos(d.todos),
+  // A failed model step is already shown on its reply; only a crash of the run itself
+  // (RuntimeError) has nowhere else to appear.
+  "session.error": (_c, d) => {
+    if (d.error.name === RUNTIME_ERROR) chatError(d.error.message);
+  },
+  "todo.updated": (_c, d) => renderPlan(d.todos),
   "session.resync": (c) => openSession(c.info.id),
 };
+
+function setBusy(c, isBusy) {
+  c.busy = isBusy;
+  renderHeader();
+  markRunning(c.info.id, isBusy);
+}
 
 function onMessageUpdated(c, d) {
   const cur = c.messages.get(d.info.id);
@@ -136,10 +146,7 @@ function onPartUpdated(c, d) {
 
 /** A part can arrive before its message; create a stub assistant message for it. */
 function addPlaceholderMessage(c, messageId) {
-  const m = {
-    info: { id: messageId, role: "assistant", model: c.info.model },
-    parts: new Map(),
-  };
+  const m = { info: { id: messageId, role: "assistant", model: c.info.model }, parts: new Map() };
   c.messages.set(messageId, m);
   return m;
 }
@@ -149,14 +156,18 @@ function onPartDelta(c, d) {
   const p = m?.parts.get(d.partId);
   if (!p) return;
   p.text = (p.text ?? "") + d.delta;
-  if (p.type !== "text") return;
-  const node = document.querySelector(`[data-part="${d.partId}"]`);
-  if (node) node.innerHTML = md(p.text);
-  else rerenderMessage(m.info.id);
+  if (p.type !== "text" || !updateTextPart(d.partId, p.text)) rerenderMessage(m.info.id);
 }
 
-function renderTodos(todos) {
+/** The agent's todo list, shown as a collapsible plan above the composer. */
+function renderPlan(todos) {
   const box = $("#todos");
-  box.textContent = todos.map((t) => `${TODO_MARKS[t.status] ?? "·"} ${t.content}`).join("   ");
   box.classList.toggle("hidden", !todos.length);
+  if (!todos.length) return box.replaceChildren();
+  const done = todos.filter((t) => t.status === "completed").length;
+  const items = todos.map((t) => el("li", { class: t.status }, t.content));
+  box.replaceChildren(
+    el("summary", {}, `Plan: ${done} of ${todos.length} done`),
+    el("ul", {}, ...items),
+  );
 }

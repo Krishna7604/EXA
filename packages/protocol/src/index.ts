@@ -12,4 +12,5 @@ export * from "./models/events.model.ts";
 export * from "./models/messages.model.ts";
 export * from "./models/model-io.model.ts";
 export * from "./models/permission.model.ts";
+export * from "./models/personal.model.ts";
 export * as api from "./schemas/api.schema.ts";

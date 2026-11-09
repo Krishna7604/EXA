@@ -3,16 +3,43 @@
 
 import { isRetryableStatus, ModelError, type ModelMessage } from "@exa/protocol";
 
+// ---------- constants ----------
+/** Provider error text kept in a ModelError (it ends up in the chat UI). */
+const MAX_ERROR_BODY_CHARS = 800;
+
 // ---------- adapter helpers ----------
 export async function httpError(res: Response, label: string): Promise<ModelError> {
   let body = "";
   try {
-    body = (await res.text()).slice(0, 800);
+    body = await res.text();
   } catch {}
+  return httpErrorFromBody(res, label, body);
+}
+
+/** Same as httpError, for a response whose body was already read. */
+export function httpErrorFromBody(res: Response, label: string, body: string): ModelError {
   // never echo request headers / keys; body from providers is safe to surface
   const retryAfter = res.headers.get("retry-after");
-  const msg = `${label} ${res.status}${retryAfter ? ` (retry-after ${retryAfter}s)` : ""}: ${body.replace(/\s+/g, " ").trim()}`;
+  const wait = retryAfter ? ` (retry-after ${retryAfter}s)` : "";
+  const msg = `${label} ${res.status}${wait}: ${providerMessage(body)}`;
   return new ModelError(msg, res.status, isRetryableStatus(res.status));
+}
+
+/**
+ * The human part of a provider error body: `error.message` / `message` from JSON bodies
+ * (OpenAI, OpenRouter, Anthropic, Gemini all use one of these), else the trimmed text.
+ */
+export function providerMessage(body: string): string {
+  const text = body.replace(/\s+/g, " ").trim();
+  try {
+    const j = JSON.parse(text);
+    const message =
+      j?.error?.message ?? j?.message ?? (typeof j?.error === "string" ? j.error : null);
+    if (typeof message === "string" && message) return message.slice(0, MAX_ERROR_BODY_CHARS);
+  } catch {
+    // not JSON: fall through to the raw text
+  }
+  return text.slice(0, MAX_ERROR_BODY_CHARS);
 }
 
 /** Parse tool arguments; tolerate trailing garbage / empty strings from flaky providers. */

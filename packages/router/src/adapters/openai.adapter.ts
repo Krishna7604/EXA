@@ -2,9 +2,16 @@
 // xAI, Mistral, Together, Cerebras, Ollama, OpenCode Zen).
 import { type FinishReason, type ModelChunk, type ModelRequest, readSse } from "@exa/protocol";
 import type { AdapterOpts } from "../models/adapter.model.ts";
-import { flattenToolBlocks, httpError, parseArgs } from "./adapter-common.ts";
+import { flattenToolBlocks, httpError, httpErrorFromBody, parseArgs } from "./adapter-common.ts";
 
 // ---------- constants ----------
+const PAYMENT_REQUIRED = 402;
+/** OpenRouter's low-credit error: "...You requested up to 8192 tokens, but can only afford 1366." */
+const AFFORDABLE_TOKENS = /can only afford (\d+)/i;
+/** Stay a little under what the provider says is affordable (the prompt also costs credits). */
+const AFFORDABLE_MARGIN = 0.9;
+/** Below this, an answer would be too short to be useful; report the error instead. */
+const MIN_RETRY_MAX_TOKENS = 256;
 const FINISH: Record<string, FinishReason> = {
   stop: "stop",
   tool_calls: "tool-calls",
@@ -125,19 +132,7 @@ export async function* streamOpenAI(
   if (opts.providerId === "openrouter") body.usage = { include: true };
   if (req.options) Object.assign(body, req.options);
 
-  const f = opts.fetch ?? fetch;
-  const res = await f(`${opts.baseURL.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-      ...(opts.key ? { Authorization: `Bearer ${opts.key}` } : {}),
-      ...opts.headers,
-    },
-    body: JSON.stringify(body),
-    signal: opts.signal,
-  });
-  if (!res.ok || !res.body) throw await httpError(res, opts.providerId);
+  const res = await postWithAffordableBudget(opts, body, opts.maxTokensField ?? "max_tokens");
 
   yield { type: "start", model: opts.model, provider: opts.providerId };
   const calls = new Map<number, { id: string; name: string; args: string }>();
@@ -211,4 +206,51 @@ export async function* streamOpenAI(
     usage: usage ?? {},
     ...(cost !== undefined ? { cost } : {}),
   };
+}
+
+// ---------- helpers ----------
+type ChatOpts = AdapterOpts & { providerId: string };
+
+function postChat(opts: ChatOpts, body: Record<string, unknown>): Promise<Response> {
+  const f = opts.fetch ?? fetch;
+  return f(`${opts.baseURL.replace(/\/$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      ...(opts.key ? { Authorization: `Bearer ${opts.key}` } : {}),
+      ...opts.headers,
+    },
+    body: JSON.stringify(body),
+    signal: opts.signal,
+  });
+}
+
+/**
+ * OpenRouter answers 402 "can only afford N tokens" when the account's credits can't cover the
+ * requested output budget. Retry once with a budget that fits, so a low balance shortens
+ * answers instead of stopping the chat. Any other failure is thrown as before.
+ */
+async function postWithAffordableBudget(
+  opts: ChatOpts,
+  body: Record<string, unknown>,
+  field: string,
+): Promise<Response & { body: ReadableStream<Uint8Array> }> {
+  const res = await postChat(opts, body);
+  if (res.ok && res.body) return res as Response & { body: ReadableStream<Uint8Array> };
+  const text = await res.text().catch(() => "");
+  const budget = res.status === PAYMENT_REQUIRED ? affordableBudget(text, body[field]) : null;
+  if (budget === null) throw httpErrorFromBody(res, opts.providerId, text);
+  const retry = await postChat(opts, { ...body, [field]: budget });
+  if (!retry.ok || !retry.body) throw await httpError(retry, opts.providerId);
+  return retry as Response & { body: ReadableStream<Uint8Array> };
+}
+
+/** The budget to retry with, or null when the error isn't a "can only afford" one. */
+function affordableBudget(errorBody: string, requested: unknown): number | null {
+  const match = errorBody.match(AFFORDABLE_TOKENS);
+  if (!match) return null;
+  const budget = Math.floor(Number(match[1]) * AFFORDABLE_MARGIN);
+  if (budget < MIN_RETRY_MAX_TOKENS || budget >= Number(requested)) return null;
+  return budget;
 }

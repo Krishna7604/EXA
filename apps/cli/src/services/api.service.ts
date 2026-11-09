@@ -3,7 +3,9 @@
 import {
   type AuthorizeRequest,
   type AuthorizeResponse,
+  type ChatSearchHit,
   type ExaEvent,
+  type MemoryItem,
   type MessageWithParts,
   type ModelChunk,
   ModelError,
@@ -49,6 +51,8 @@ export class ApiError extends Error {
 }
 
 // ---------- types ----------
+type MemoryBody = Pick<MemoryItem, "topic" | "content">;
+
 interface RequestOptions {
   signal?: AbortSignal;
   raw?: boolean;
@@ -113,6 +117,26 @@ export class ExaApi {
   }
   usage(days = 30) {
     return this.req<UsageRow[]>("GET", `/v1/usage?days=${days}`);
+  }
+
+  // long-term memory and chat search
+  memories(limit: number) {
+    return this.req<MemoryItem[]>("GET", `/v1/memories?limit=${limit}`);
+  }
+  searchMemories(query: string, limit: number) {
+    return this.req<MemoryItem[]>("GET", `/v1/memories?${searchParams(query, limit)}`);
+  }
+  createMemory(body: MemoryBody) {
+    return this.req<MemoryItem>("POST", "/v1/memories", body);
+  }
+  updateMemory(id: string, body: MemoryBody) {
+    return this.req<MemoryItem>("PUT", `/v1/memories/${encodeURIComponent(id)}`, body);
+  }
+  deleteMemory(id: string) {
+    return this.req<void>("DELETE", `/v1/memories/${encodeURIComponent(id)}`);
+  }
+  searchChats(query: string, limit: number) {
+    return this.req<ChatSearchHit[]>("GET", `/v1/search?${searchParams(query, limit)}`);
   }
 
   // sessions
@@ -225,6 +249,10 @@ export class ExaApi {
 }
 
 // ---------- helpers ----------
+function searchParams(query: string, limit: number): string {
+  return new URLSearchParams({ q: query, limit: String(limit) }).toString();
+}
+
 /** Build an ApiError from a failed response, using the server's error body when present. */
 async function toError(res: Response): Promise<ApiError> {
   let code = "http_error";

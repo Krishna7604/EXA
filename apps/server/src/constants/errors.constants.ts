@@ -15,6 +15,8 @@ export const ERROR_CODES = {
   badJson: "bad_json",
   tooLarge: "too_large",
   conflict: "conflict",
+  /** A per-user collection is full (e.g. memories); the body's `limit` says how many. */
+  limitReached: "limit_reached",
   locked: "locked",
   badStorageMode: "bad_storage_mode",
   wrongHost: "wrong_host",

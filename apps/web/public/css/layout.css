@@ -1,0 +1,211 @@
+/* App shell: the icon rail, the chat-list panel, the main area, and how they collapse on small
+   screens (the rail becomes a bottom tab bar and the panel a drawer). */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--rail-w) var(--panel-w) minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+}
+.app.no-panel {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+}
+.app.bare {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app.no-panel .panel,
+.app.bare .panel,
+.app.bare .rail {
+  display: none;
+}
+
+/* ---------- rail ---------- */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 0 12px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+.rail-brand {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 14px;
+  border-radius: 11px;
+  background: var(--ink);
+  color: var(--bg);
+  text-decoration: none;
+}
+.rail-brand svg {
+  width: 22px;
+  height: 22px;
+}
+.rail-item {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  width: 56px;
+  padding: 8px 0 6px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 550;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.rail-item:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+.rail-item.active {
+  color: var(--iris);
+  background: var(--iris-wash);
+}
+.rail-item .dot {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--marigold);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.rail-spacer {
+  flex: 1;
+}
+.rail-avatar {
+  width: 34px;
+  height: 34px;
+  margin-top: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--iris-line);
+  background: var(--iris-wash);
+  color: var(--iris);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+/* ---------- panel (chat list) ---------- */
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+  border-right: 1px solid var(--line);
+}
+.panel-head {
+  display: grid;
+  gap: 10px;
+  padding: 16px 14px 10px;
+}
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+.panel-foot {
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+}
+
+/* ---------- main ---------- */
+.main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.scrim {
+  display: none;
+}
+
+/* ---------- small screens ---------- */
+@media (max-width: 860px) {
+  .app,
+  .app.no-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .main {
+    grid-row: 1;
+  }
+  .rail {
+    grid-row: 2;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top: 1px solid var(--line);
+  }
+  .rail-brand,
+  .rail-spacer,
+  .rail-avatar,
+  #theme-toggle {
+    display: none;
+  }
+  .rail-item {
+    width: auto;
+    flex: 1;
+  }
+  .panel {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(320px, 86vw);
+    transform: translateX(-102%);
+    transition: transform 0.22s var(--ease);
+    box-shadow: var(--shadow-float);
+  }
+  .app.no-panel .panel {
+    display: flex;
+  }
+  .app.menu-open .panel {
+    transform: none;
+  }
+  .app.menu-open .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    background: color-mix(in srgb, var(--ink) 30%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

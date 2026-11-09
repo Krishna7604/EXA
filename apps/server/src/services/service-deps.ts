@@ -7,8 +7,10 @@ import type { ServerConfig } from "../config/env.config.ts";
 import type { ResolvedSettings } from "../models/settings.model.ts";
 import type { Subject } from "../models/subject.model.ts";
 import type { ConfigRepo } from "../repositories/config.repository.ts";
+import type { ConnectorRepo } from "../repositories/connector.repository.ts";
 import type { ExtensionsRepo } from "../repositories/extensions.repository.ts";
 import type { IdentityRepo } from "../repositories/identity.repository.ts";
+import type { MemoryRepo } from "../repositories/memory.repository.ts";
 import type { SessionRepo } from "../repositories/session.repository.ts";
 import type { TelemetryWriter } from "../repositories/telemetry.repository.ts";
 import type { ApprovalBroker } from "../runtime/approval-broker.ts";
@@ -25,6 +27,8 @@ export interface ServiceDeps {
   config: ConfigRepo;
   sessions: SessionRepo;
   extensions: ExtensionsRepo;
+  memories: MemoryRepo;
+  connectors: ConnectorRepo;
   telemetry: TelemetryWriter;
   /** Null when BYOK is disabled (no master key configured). */
   vault: KeyVault | null;

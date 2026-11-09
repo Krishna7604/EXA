@@ -140,6 +140,8 @@ export interface SessionInfo {
   userId: string;
   projectId: string | null;
   parentId: string | null;
+  /** Set when this session is a scheduled task's run. */
+  taskId?: string | null;
   title: string | null;
   directory: string | null;
   agent: string;

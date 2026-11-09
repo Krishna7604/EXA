@@ -11,7 +11,7 @@ import {
   text,
   toolCall,
 } from "@exa/core";
-import { newId, type SessionInfo, zeroTokens } from "@exa/protocol";
+import { type MessageInfo, newId, type SessionInfo, zeroTokens } from "@exa/protocol";
 import { migrate, PgliteDb, PostgresDb, TENANT_TABLES } from "@exa/store";
 import { z } from "zod";
 import { ConfigRepo } from "../repositories/config.repository.ts";
@@ -221,6 +221,23 @@ describe("leases", () => {
     expect(
       await sessions.acquireLease(A.tenantId, s.id, { type: "server", id: "node1" }, 30_000),
     ).toBe(3);
+  });
+});
+
+describe("content", () => {
+  test("a stored step with no parts keeps its message", async () => {
+    const s = mkSession(A, "server", "client");
+    await sessions.create(s);
+    const info = {
+      id: newId(),
+      sessionId: s.id,
+      parentId: null,
+      role: "assistant",
+      time: { created: Date.now() },
+    } as unknown as MessageInfo;
+    await sessions.putStep(A.tenantId, info, []);
+    const stored = await sessions.messages(A.tenantId, s.id);
+    expect(stored.map((m) => [m.info.id, m.parts.length])).toEqual([[info.id, 0]]);
   });
 });
 

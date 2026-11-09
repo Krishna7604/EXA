@@ -7,11 +7,13 @@
 //    `exa_app` role that withTenant() switches to.
 //  * Conversation content (messages, parts) exists ONLY for sessions with storage_mode='server'.
 //  * usage_events / audit_log are append-only and range-partitioned by month.
+//  * 003 adds the personal-agent tables (memories, scheduled tasks + runs) and full-text
+//    search over stored chats. Drizzle table definitions in ../tables/ mirror this SQL.
 import type { Db } from "../db/db.ts";
 
 // ---------- constants ----------
-/** Tables that carry tenant_id and get the RLS policy + exa_app grants. */
-export const TENANT_TABLES = [
+/** Tenant tables created by 001. Frozen: 001's SQL is generated from this list. */
+const INITIAL_TENANT_TABLES = [
   "projects",
   "settings",
   "permission_rules",
@@ -33,6 +35,12 @@ export const TENANT_TABLES = [
   "secrets",
   "usage_rollups",
 ];
+
+/** Tenant tables created by 003. */
+const PERSONAL_TENANT_TABLES = ["memories", "scheduled_tasks", "task_runs"];
+
+/** Tables that carry tenant_id and get the RLS policy + exa_app grants. */
+export const TENANT_TABLES = [...INITIAL_TENANT_TABLES, ...PERSONAL_TENANT_TABLES];
 
 // ---------- migrations ----------
 export const MIGRATIONS: Array<{ id: string; sql: string }> = [
@@ -360,16 +368,12 @@ create table secrets (
   unique (tenant_id, name)
 );
 
-${TENANT_TABLES.map(
-  (t) => `alter table ${t} enable row level security;
-create policy ${t}_tenant on ${t} using (tenant_id = nullif(current_setting('exa.tenant_id', true), '')::uuid)
-  with check (tenant_id = nullif(current_setting('exa.tenant_id', true), '')::uuid);
-grant select, insert, update, delete on ${t} to exa_app;`,
-).join("\n")}
+${rlsFor(INITIAL_TENANT_TABLES)}
 grant select on tenants, users, memberships, model_backends to exa_app;
 grant usage on schema public to exa_app;
 `,
   },
+
   {
     id: "002_partition_fn",
     sql: `
@@ -416,6 +420,73 @@ begin
 end $$ language plpgsql;
 `,
   },
+  {
+    id: "003_personal_agent",
+    sql: `
+-- every session's content is now stored by default; scheduled runs point back at their task
+alter table sessions add column task_id uuid;
+create index sessions_task_idx on sessions(task_id, created_at desc) where task_id is not null;
+
+alter table mcp_servers add column created_at timestamptz not null default now();
+alter table mcp_servers add column updated_at timestamptz not null default now();
+create unique index mcp_servers_name_idx on mcp_servers(tenant_id, scope, scope_id, name);
+
+create table memories (
+  id uuid primary key,
+  tenant_id uuid not null references tenants(id) on delete cascade,
+  user_id uuid not null,
+  topic text not null,
+  content text not null,
+  source_session_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  search tsvector generated always as (to_tsvector('english', topic || ' ' || content)) stored
+);
+create index memories_user_idx on memories(tenant_id, user_id, updated_at desc);
+create index memories_search_idx on memories using gin(search);
+
+create table scheduled_tasks (
+  id uuid primary key,
+  tenant_id uuid not null references tenants(id) on delete cascade,
+  user_id uuid not null,
+  name text not null,
+  prompt text not null,
+  schedule text not null,
+  timezone text not null default 'UTC',
+  model text,
+  agent text,
+  enabled boolean not null default true,
+  next_run_at timestamptz,
+  last_run_at timestamptz,
+  last_status text check (last_status in ('running','ok','error')),
+  last_session_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index scheduled_tasks_user_idx on scheduled_tasks(tenant_id, user_id, created_at desc);
+create index scheduled_tasks_due_idx on scheduled_tasks(next_run_at) where enabled;
+
+create table task_runs (
+  id uuid primary key,
+  tenant_id uuid not null references tenants(id) on delete cascade,
+  task_id uuid not null references scheduled_tasks(id) on delete cascade,
+  session_id uuid,
+  trigger text not null check (trigger in ('schedule','manual')),
+  status text not null check (status in ('running','ok','error')),
+  error text,
+  cost_usd numeric(14,6) not null default 0,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+create index task_runs_task_idx on task_runs(task_id, started_at desc);
+
+-- full-text search over stored chat text (user prompts and answers)
+create index parts_text_search_idx on parts
+  using gin (to_tsvector('english', coalesce(data->>'text', ''))) where type = 'text';
+
+${rlsFor(PERSONAL_TENANT_TABLES)}
+`,
+  },
 ];
 
 // ---------- migrate ----------
@@ -445,4 +516,17 @@ export async function migrate(db: Db & { exec(sql: string): Promise<void> }): Pr
     applied.push(m.id);
   }
   return applied;
+}
+
+// ---------- helpers ----------
+/** RLS policy keyed on `exa.tenant_id` plus the exa_app grants, for each table. */
+function rlsFor(tables: string[]): string {
+  return tables
+    .map(
+      (t) => `alter table ${t} enable row level security;
+create policy ${t}_tenant on ${t} using (tenant_id = nullif(current_setting('exa.tenant_id', true), '')::uuid)
+  with check (tenant_id = nullif(current_setting('exa.tenant_id', true), '')::uuid);
+grant select, insert, update, delete on ${t} to exa_app;`,
+    )
+    .join("\n");
 }

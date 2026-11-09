@@ -1,10 +1,11 @@
 // exa server entrypoint: `bun run apps/server/src/main.ts`. Boots services, serves HTTP,
-// schedules maintenance and shuts down cleanly on SIGINT/SIGTERM.
+// schedules maintenance and scheduled tasks, and shuts down cleanly on SIGINT/SIGTERM.
 
 import { createApp } from "./app.ts";
 import { loadConfig, type ServerConfig } from "./config/env.config.ts";
 import { createServices, type Services } from "./container.ts";
 import { scheduleMaintenance } from "./jobs/maintenance.job.ts";
+import { scheduleTasks } from "./jobs/scheduler.job.ts";
 
 // ---------- constants ----------
 /** Seconds; SSE + model streams are long-lived, and their heartbeats keep them under this. */
@@ -27,11 +28,14 @@ const server = Bun.serve({
 
 // Maintenance: idle runtimes, partitions, retention, expired approvals/device codes.
 const stopMaintenance = scheduleMaintenance(services);
+// Scheduled tasks; EXA_SCHEDULER=0 leaves them to other nodes.
+const stopScheduler = cfg.scheduler.enabled ? scheduleTasks(services) : () => {};
 
 logStartup(cfg, services, server.url);
 
 const shutdown = async () => {
   stopMaintenance();
+  stopScheduler();
   server.stop();
   await services.close();
   process.exit(0);

@@ -8,7 +8,8 @@ import { MaintenanceRepo } from "../repositories/maintenance.repository.ts";
 
 // ---------- constants ----------
 const MAINTENANCE_INTERVAL_MS = 5 * 60_000;
-const DEFAULT_CONTENT_RETENTION_DAYS = 30;
+/** 0 = keep stored content forever. */
+const DEFAULT_CONTENT_RETENTION_DAYS = 0;
 const DEFAULT_USAGE_RETENTION_MONTHS = 13;
 
 // ---------- types ----------

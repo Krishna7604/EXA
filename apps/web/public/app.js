@@ -1,28 +1,34 @@
-// exa light client: chat UI over the exa server (server loop) + live viewer/approver for
-// client-loop sessions. No build step; talks to the same /v1 API as the CLI.
+// exa web client: chat with the server-hosted agent, follow and approve CLI sessions, and manage
+// tasks, memory, connectors and settings. No build step; talks to the same /v1 API as the CLI.
 // Entry module (loaded by index.html as type="module"): wires DOM events, then routes.
 
 import { $ } from "./js/helpers/dom.helper.js";
+import { hydrateIcons } from "./js/helpers/icons.helper.js";
 import { store, TOKEN_KEY } from "./js/helpers/storage.helper.js";
+import { applyTheme, toggleTheme } from "./js/helpers/theme.helper.js";
 import { route } from "./js/router.js";
 import { api } from "./js/services/api.service.js";
-import { boot, finishLogin, logout } from "./js/services/auth.service.js";
+import { boot, finishLogin, openAccountMenu } from "./js/services/auth.service.js";
 import { state } from "./js/state.js";
-import { alertLine } from "./js/views/approvals.view.js";
-import { newChatView, send } from "./js/views/chat.view.js";
-import { addRule, saveKey, saveOrgSettings, savePrefs } from "./js/views/settings.view.js";
-import { refreshSessions } from "./js/views/sidebar.view.js";
+import { newChatView, openChatMenu, send } from "./js/views/chat.view.js";
+import { togglePanel } from "./js/views/layout.view.js";
+import { wireCopyButtons } from "./js/views/messages.view.js";
+import { wireSearch } from "./js/views/sidebar.view.js";
+import { toastError } from "./js/views/toast.view.js";
 
 // ---------- constants ----------
-const PROMPT_MAX_HEIGHT_PX = 220;
-const FORGET_CONFIRM = "Delete this chat and everything stored for it? This can't be undone.";
+const PROMPT_MAX_HEIGHT_PX = 240;
 
 // ---------- wiring ----------
+applyTheme();
+hydrateIcons();
 wireLogin();
 wireComposer();
 wireChatControls();
-wireSettings();
-window.addEventListener("hashchange", () => route().catch((e) => alertLine(e.message)));
+wireShell();
+wireSearch();
+wireCopyButtons();
+window.addEventListener("hashchange", () => route().catch((e) => toastError(e.message)));
 route().catch((e) => console.error(e));
 
 // ---------- login ----------
@@ -30,7 +36,6 @@ function wireLogin() {
   $("#dev-login").addEventListener("submit", onDevLogin);
   $("#token-login").addEventListener("submit", onTokenLogin);
   $("#device-form").addEventListener("submit", onDeviceApprove);
-  $("#logout").addEventListener("click", logout);
 }
 
 async function onDevLogin(ev) {
@@ -43,7 +48,7 @@ async function onDevLogin(ev) {
       body: JSON.stringify({ email: f.email.value, tenant: f.tenant.value }),
     });
     const j = await r.json();
-    if (!r.ok) throw new Error(j.error?.message ?? "login failed");
+    if (!r.ok) throw new Error(j.error?.message ?? "Sign-in failed");
     state.token = j.token;
     store.set(TOKEN_KEY, j.token);
     await finishLogin();
@@ -68,13 +73,16 @@ async function onTokenLogin(ev) {
 
 async function onDeviceApprove(ev) {
   ev.preventDefault();
+  const result = $("#device-result");
   try {
     await api("POST", "/v1/auth/device/approve", {
       userCode: ev.target.code.value.trim().toUpperCase(),
     });
-    $("#device-result").textContent = "✓ Device connected. You can return to your terminal.";
+    result.className = "notice ok";
+    result.textContent = "Device connected. You can go back to your terminal.";
   } catch (e) {
-    $("#device-result").textContent = e.message;
+    result.className = "notice bad";
+    result.textContent = e.message;
   }
 }
 
@@ -91,8 +99,10 @@ function wireComposer() {
   });
 }
 
+/** The send button doubles as "stop" while the agent works. */
 async function onComposerSubmit(ev) {
   ev.preventDefault();
+  if (state.current?.busy) return abort();
   const t = $("#prompt").value.trim();
   if (!t) return;
   $("#prompt").value = "";
@@ -100,7 +110,7 @@ async function onComposerSubmit(ev) {
   try {
     await send(t);
   } catch (e) {
-    alertLine(e.message);
+    toastError(e.message);
   }
 }
 
@@ -110,67 +120,46 @@ function autosize() {
   t.style.height = `${Math.min(t.scrollHeight, PROMPT_MAX_HEIGHT_PX)}px`;
 }
 
+function abort() {
+  if (!state.current) return;
+  api("POST", `/v1/sessions/${state.current.info.id}/abort`).catch((e) => toastError(e.message));
+}
+
 // ---------- chat controls ----------
 function wireChatControls() {
-  $("#new-chat").addEventListener("click", () => {
-    location.hash = "#/";
+  $("#new-chat").addEventListener("click", (e) => {
+    if (location.hash !== "#/" && location.hash !== "") return;
+    e.preventDefault();
     newChatView();
   });
-  $("#toggle-sidebar").addEventListener("click", () => $("#app").classList.toggle("menu-open"));
-  $("#abort-btn").addEventListener("click", onAbort);
-  $("#forget-btn").addEventListener("click", onForget);
+  $("#chat-more").addEventListener("click", (e) => openChatMenu(e.currentTarget));
   $("#model-select").addEventListener("change", (e) => patchSession({ model: e.target.value }));
   $("#mode-select").addEventListener("change", (e) =>
     patchSession({ permissionMode: e.target.value }),
   );
 }
 
-function onAbort() {
-  if (!state.current) return;
-  api("POST", `/v1/sessions/${state.current.info.id}/abort`).catch((e) => alertLine(e.message));
-}
-
-async function onForget() {
-  const c = state.current;
-  if (!c || !confirm(FORGET_CONFIRM)) return;
-  await api("DELETE", `/v1/sessions/${c.info.id}`);
-  location.hash = "#/";
-  await refreshSessions();
-}
-
-/** Apply a model/mode change to the open chat (no-op on the new-chat screen). */
+/** Apply a model/approval-mode change to the open chat (no-op on the home screen). */
 async function patchSession(patch) {
   if (!state.current) return;
   await api("PATCH", `/v1/sessions/${state.current.info.id}`, patch).catch((err) =>
-    alertLine(err.message),
+    toastError(err.message),
   );
 }
 
-// ---------- settings ----------
-function wireSettings() {
-  $("#open-settings").addEventListener("click", () => {
-    location.hash = "#/settings";
-  });
-  $("#close-settings").addEventListener("click", () => history.back());
-  $("#key-form").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    try {
-      await saveKey(ev.target);
-    } catch (e) {
-      $("#key-error").textContent = e.message;
-    }
-  });
-  $("#save-prefs").addEventListener("click", async () => {
-    try {
-      await savePrefs();
-      $("#prefs-note").textContent = "Saved.";
-    } catch (e) {
-      $("#prefs-note").textContent = e.message;
-    }
-  });
-  $("#save-org").addEventListener("click", saveOrgSettings);
-  $("#rule-form").addEventListener("submit", (ev) => {
-    ev.preventDefault();
-    return addRule(ev.target);
+// ---------- shell ----------
+function wireShell() {
+  $("#toggle-panel").addEventListener("click", () => togglePanel(true));
+  $("#scrim").addEventListener("click", () => togglePanel(false));
+  $("#session-list").addEventListener("click", () => togglePanel(false));
+  $("#theme-toggle").addEventListener("click", toggleTheme);
+  $("#me-button").addEventListener("click", (e) => openAccountMenu(e.currentTarget));
+  document.addEventListener("keydown", (e) => {
+    const isSearchShortcut = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k";
+    if (!isSearchShortcut || $("#app").classList.contains("bare")) return;
+    e.preventDefault();
+    if (!location.hash.startsWith("#/s/") && location.hash !== "#/" && location.hash)
+      location.hash = "#/";
+    $("#chat-search").focus();
   });
 }
